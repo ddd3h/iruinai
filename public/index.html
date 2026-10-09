@@ -1,0 +1,83 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>在室カレンダー</title>
+  <link rel="stylesheet" href="/style.css">
+  <script src="/vendor/fullcalendar/index.global.min.js"></script>
+  <script src="/vendor/locales/ja.global.min.js"></script>
+</head>
+<body>
+  <header class="topbar">
+    <h1>在室カレンダー</h1>
+    <div id="people" class="people"></div>
+    <button id="addPersonBtn" class="btn" title="人を追加">＋<span class="label"> 人を追加</span></button>
+  </header>
+
+  <main>
+    <div id="calendar"></div>
+  </main>
+
+  <button id="addStayBtn" class="fab" title="在室を追加" aria-label="在室を追加">＋</button>
+
+  <!-- 在室の追加・編集 -->
+  <dialog id="stayDialog">
+    <form id="stayForm" method="dialog">
+      <h2 id="stayTitle">在室を追加</h2>
+      <label>だれ</label>
+      <div id="personPicker" class="picker"></div>
+      <div id="singleDate" class="row">
+        <label>日付<input type="date" name="date"></label>
+      </div>
+      <div id="multiDate">
+        <label>日付 <span id="dateCount" class="count"></span></label>
+        <div id="miniCal" class="minical"></div>
+        <div class="minical-foot">
+          <span class="hint">曜日をタップで、その月の同じ曜日をまとめて選択</span>
+          <button type="button" id="clearDates" class="btn link">クリア</button>
+        </div>
+      </div>
+      <div class="row">
+        <label>開始<input type="time" name="startTime" required step="900"></label>
+        <label>終了<input type="time" name="endTime" required step="900"></label>
+      </div>
+      <label>メモ<input type="text" name="note" maxlength="100" placeholder="任意"></label>
+      <p class="error" id="stayError"></p>
+      <div class="actions">
+        <button type="button" id="stayDelete" class="btn danger">削除</button>
+        <span class="spacer"></span>
+        <button type="button" class="btn" data-close>キャンセル</button>
+        <button type="submit" class="btn primary">保存</button>
+      </div>
+    </form>
+  </dialog>
+
+  <!-- 人の追加・編集 -->
+  <dialog id="personDialog">
+    <form id="personForm" method="dialog">
+      <h2 id="personTitle">人を追加</h2>
+      <div class="icon-edit">
+        <div id="iconPreview" class="avatar big"></div>
+        <div>
+          <label class="btn">画像を選ぶ<input type="file" name="icon" accept="image/png,image/jpeg,image/gif,image/webp" hidden></label>
+          <button type="button" id="removeIconBtn" class="btn link">画像を外す</button>
+          <p class="hint">2MBまで</p>
+        </div>
+      </div>
+      <label>名前<input type="text" name="name" required maxlength="20"></label>
+      <label>色<input type="color" name="color" value="#4f7cff"></label>
+      <p class="error" id="personError"></p>
+      <div class="actions">
+        <button type="button" id="personDelete" class="btn danger">削除</button>
+        <span class="spacer"></span>
+        <button type="button" class="btn" data-close>キャンセル</button>
+        <button type="submit" class="btn primary">保存</button>
+      </div>
+    </form>
+  </dialog>
+
+  <script src="/holidays.js"></script>
+  <script src="/app.js"></script>
+</body>
+</html>
