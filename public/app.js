@@ -352,21 +352,28 @@ $('#stayDelete').addEventListener('click', async () => {
 let editingPerson = null;
 let removeIcon = false;
 
+let previewUrl = null; // 選んだ画像のプレビュー用URL（ファイル選択時だけ作り直す）
+
+// 要素を作り直さずにその場で更新する（入力のたびに画像を読み直すとチカチカするため）
 function updatePreview() {
   const f = $('#personForm');
-  const file = f.icon.files[0];
   const preview = $('#iconPreview');
-  const p = {
-    name: f.name.value || '?',
-    color: f.color.value,
-    icon_path: file ? URL.createObjectURL(file) : (removeIcon ? null : editingPerson?.icon_path),
-  };
-  preview.replaceWith(Object.assign(avatar(p, 'big'), { id: 'iconPreview' }));
+  const icon = previewUrl || (removeIcon ? null : editingPerson?.icon_path);
+  preview.style.backgroundColor = f.color.value;
+  const bg = icon ? `url("${icon}")` : '';
+  if (preview.style.backgroundImage !== bg) preview.style.backgroundImage = bg;
+  preview.textContent = icon ? '' : (f.name.value || '?').slice(0, 1);
+}
+
+function resetPreviewUrl() {
+  if (previewUrl) URL.revokeObjectURL(previewUrl);
+  previewUrl = null;
 }
 
 function openPersonDialog(person) {
   editingPerson = person;
   removeIcon = false;
+  resetPreviewUrl();
   const f = $('#personForm');
   f.reset();
   $('#personTitle').textContent = person ? '人を編集' : '人を追加';
@@ -378,11 +385,18 @@ function openPersonDialog(person) {
   $('#personDialog').showModal();
 }
 
-$('#personForm').icon.addEventListener('change', () => { removeIcon = false; updatePreview(); });
+$('#personForm').icon.addEventListener('change', (e) => {
+  resetPreviewUrl();
+  const file = e.target.files[0];
+  if (file) previewUrl = URL.createObjectURL(file);
+  removeIcon = false;
+  updatePreview();
+});
 $('#personForm').name.addEventListener('input', updatePreview);
 $('#personForm').color.addEventListener('input', updatePreview);
 $('#removeIconBtn').addEventListener('click', () => {
   removeIcon = true;
+  resetPreviewUrl();
   $('#personForm').icon.value = '';
   updatePreview();
 });
