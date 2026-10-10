@@ -87,6 +87,22 @@
           <label>終了日<input type="date" name="endDate"></label>
           <label class="memo-time">終了時間<input type="time" name="endTime" step="900"></label>
         </div>
+        <div id="memoRepeat">
+          <div class="row">
+            <label>繰り返し
+              <select name="repeat">
+                <option value="">しない</option>
+                <option value="daily">毎日</option>
+                <option value="weekdays">平日（月〜金）</option>
+                <option value="weekly">毎週</option>
+                <option value="biweekly">隔週</option>
+                <option value="monthly">毎月</option>
+              </select>
+            </label>
+            <label id="memoRepeatUntilWrap">いつまで<input type="date" name="repeatUntil"></label>
+          </div>
+          <p class="hint" id="memoRepeatInfo"></p>
+        </div>
       </div>
       <p class="error" id="memoError"></p>
       <div class="actions">

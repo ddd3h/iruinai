@@ -497,7 +497,57 @@ function updateMemoFields() {
   $('#memoMulti').hidden = !multi;
   $('#memoRange').hidden = multi;
   document.querySelectorAll('#memoForm .memo-time').forEach((el) => { el.hidden = allDay; });
+  // 繰り返しは新規の時間指定だけ
+  $('#memoRepeat').hidden = !!editingMemo || allDay;
+  updateRepeatInfo();
 }
+
+const REPEAT_MAX = 100;
+
+// 繰り返しの各回の開始日（YYYY-MM-DD）。REPEAT_MAX を超えたら REPEAT_MAX + 1 件で打ち切る
+function repeatDates(startDate, kind, until) {
+  const out = [];
+  if (!kind) return [startDate];
+  if (kind === 'monthly') {
+    const s = new Date(startDate + 'T00:00:00');
+    for (let k = 0; out.length <= REPEAT_MAX; k++) {
+      const d = new Date(s.getFullYear(), s.getMonth() + k, s.getDate());
+      if (toDate(d) > until) break;
+      if (d.getDate() === s.getDate()) out.push(toDate(d)); // 31日がない月などは飛ばす
+    }
+    return out;
+  }
+  const step = { daily: 1, weekdays: 1, weekly: 7, biweekly: 14 }[kind];
+  for (let d = startDate; d <= until && out.length <= REPEAT_MAX; d = addDays(d, step)) {
+    const wd = new Date(d + 'T00:00:00').getDay();
+    if (kind === 'weekdays' && (wd === 0 || wd === 6)) continue;
+    out.push(d);
+  }
+  return out;
+}
+
+// 日付の差（日数）
+const dayDiff = (a, b) => Math.round((new Date(b + 'T00:00:00') - new Date(a + 'T00:00:00')) / 86400000);
+
+function updateRepeatInfo() {
+  const f = $('#memoForm');
+  const kind = f.repeat.value;
+  $('#memoRepeatUntilWrap').hidden = !kind;
+  const info = $('#memoRepeatInfo');
+  if (!kind || $('#memoRepeat').hidden) { info.textContent = ''; return; }
+  if (!f.repeatUntil.value && f.startDate.value) {
+    const d = new Date(f.startDate.value + 'T00:00:00');
+    f.repeatUntil.value = toDate(new Date(d.getFullYear(), d.getMonth() + 1, d.getDate()));
+  }
+  if (!f.startDate.value || !f.repeatUntil.value || f.repeatUntil.value < f.startDate.value) {
+    info.textContent = '「いつまで」は開始日以降にしてください';
+    return;
+  }
+  const n = repeatDates(f.startDate.value, kind, f.repeatUntil.value).length;
+  info.textContent = n > REPEAT_MAX ? `${REPEAT_MAX}件までです。「いつまで」を短くしてください` : `${n}件のメモを作成します`;
+}
+
+['repeat', 'repeatUntil', 'startDate'].forEach((n) => $('#memoForm')[n].addEventListener('change', updateRepeatInfo));
 
 // opts: { dates, allDay, startTime, endTime }（新規のときの初期値）
 function openMemoDialog(memo, opts = {}) {
@@ -576,7 +626,13 @@ $('#memoForm').addEventListener('submit', async (e) => {
     const start = `${f.startDate.value}T${f.startTime.value}:00`;
     const end = `${f.endDate.value}T${f.endTime.value}:00`;
     if (start >= end) return err('終了は開始より後にしてください');
-    items = [{ start, end }];
+    const kind = editingMemo ? '' : f.repeat.value;
+    if (kind && (!f.repeatUntil.value || f.repeatUntil.value < f.startDate.value)) return err('「いつまで」は開始日以降にしてください');
+    // 繰り返し：各回を開始日からずらして作る（日をまたぐメモも同じ長さで）
+    const span = dayDiff(f.startDate.value, f.endDate.value);
+    const days = repeatDates(f.startDate.value, kind, f.repeatUntil.value);
+    if (days.length > REPEAT_MAX) return err(`繰り返しは${REPEAT_MAX}件までです`);
+    items = days.map((d) => ({ start: `${d}T${f.startTime.value}:00`, end: `${addDays(d, span)}T${f.endTime.value}:00` }));
   }
   try {
     if (editingMemo) {
