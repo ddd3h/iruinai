@@ -71,7 +71,7 @@ body {
 .avatar.small { width: 18px; height: 18px; font-size: 10px; border: 1.5px solid #fff; }
 .avatar.big { width: 72px; height: 72px; font-size: 28px; }
 
-main { padding: 16px; max-width: 1200px; margin: 0 auto; }
+main { padding: 16px; }
 #calendar { background: var(--surface); padding: 12px; border-radius: 12px; border: 1px solid var(--border); }
 
 /* カレンダー内の予定 */

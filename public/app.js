@@ -294,13 +294,14 @@ function initCalendar() {
 }
 
 // カレンダーの高さ
-// PC：画面の下端まで使う（最低 月 640px／週・日 720px）
+// PC：画面の高さぴったり（ページはスクロールしない。極端に小さい画面だけ 400px を下限に）
 // スマホ：月は中身に合わせる、週・日は 720px でスクロール
 function calendarHeight(viewType) {
-  const month = viewType === 'dayGridMonth';
-  if (isMobile()) return month ? 'auto' : 720;
-  const top = $('#calendar').getBoundingClientRect().top + window.scrollY;
-  return Math.max(month ? 640 : 720, Math.round(window.innerHeight - top - 24));
+  if (isMobile()) return viewType === 'dayGridMonth' ? 'auto' : 720;
+  const el = $('#calendar'); // height は余白・枠込みの高さとして効く
+  const top = el.getBoundingClientRect().top + window.scrollY;
+  const bottomGap = parseFloat(getComputedStyle(el.parentElement).paddingBottom);
+  return Math.max(400, Math.floor(window.innerHeight - top - bottomGap));
 }
 
 function applyHeight(viewType) {
