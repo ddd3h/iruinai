@@ -200,13 +200,14 @@ function initCalendar() {
       top.prepend(label);
     },
     datesSet: (info) => {
-      // 月は全体表示、週・日は高さ固定でスクロール
-      const h = info.view.type === 'dayGridMonth' ? 'auto' : 720;
-      if (calendar && calendar.getOption('height') !== h) {
-        calendar.setOption('height', h);
-        if (h !== 'auto') setTimeout(() => calendar.scrollToTime('08:00:00'));
+      if (!calendar) return;
+      const before = calendar.getOption('height');
+      applyHeight(info.view.type);
+      if (info.view.type !== 'dayGridMonth' && before !== calendar.getOption('height')) {
+        setTimeout(() => calendar.scrollToTime('08:00:00'));
       }
     },
+    windowResize: (arg) => applyHeight(arg.view.type),
     eventContent: (arg) => {
       if (arg.event.extendedProps.kind === 'memo') return memoContent(arg);
       const st = arg.event.extendedProps.stay;
@@ -290,6 +291,24 @@ function initCalendar() {
     },
   });
   calendar.render();
+}
+
+// カレンダーの高さ
+// PC：画面の下端まで使う（最低 月 640px／週・日 720px）
+// スマホ：月は中身に合わせる、週・日は 720px でスクロール
+function calendarHeight(viewType) {
+  const month = viewType === 'dayGridMonth';
+  if (isMobile()) return month ? 'auto' : 720;
+  const top = $('#calendar').getBoundingClientRect().top + window.scrollY;
+  return Math.max(month ? 640 : 720, Math.round(window.innerHeight - top - 24));
+}
+
+function applyHeight(viewType) {
+  const h = calendarHeight(viewType);
+  if (calendar.getOption('height') !== h) calendar.setOption('height', h);
+  // PC の月表示はマスの高さに入るだけ予定を出す
+  const max = isMobile() ? 4 : true;
+  if (calendar.getOption('dayMaxEvents') !== max) calendar.setOption('dayMaxEvents', max);
 }
 
 const rangeQuery = (info) =>
