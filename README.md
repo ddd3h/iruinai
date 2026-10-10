@@ -47,6 +47,7 @@ npm start
 | --- | --- | --- |
 | `PORT` | `3000` | 待ち受けるポート番号 |
 | `DATA_DIR` | `./data` | データベースと画像の保存先 |
+| `PUBLIC_URL` | （自動） | 公開URL（例: `https://room.example.com`）。HTTPS のプロキシの後ろで、共有時の画像のURLが `http://` になるときだけ設定します |
 | `ROOM_PASSWORD` | （なし） | 部屋の合言葉。設定すると、開くときに合言葉の入力が必要になります |
 
 例: `PORT=8080 DATA_DIR=/srv/room-calendar npm start`
@@ -83,6 +84,7 @@ npm start
 server.js            API・画面ファイル・画像の配信
 public/index.html    画面の骨組みとダイアログ
 public/login.html    合言葉の入力画面
+public/iruinai-ogp.png  共有時に表示される画像（OGP）
 public/app.js        カレンダーと人の管理
 public/holidays.js   日本の祝日の計算
 public/style.css     見た目

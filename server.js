@@ -88,8 +88,21 @@ const failures = new Map();
 const LOCK_COUNT = 5;
 const LOCK_MS = 60 * 1000;
 
+// OGP の画像は URL が絶対でないと読まれないため、HTML の __ORIGIN__ をアクセス先の URL に置き換えて返す
+// リバースプロキシの後ろで URL が違って見えるときは PUBLIC_URL（例: https://room.example.com）を設定する
+const PUBLIC_URL = (process.env.PUBLIC_URL || '').replace(/\/+$/, '');
+function sendPage(file) {
+  const html = fs.readFileSync(path.join(__dirname, 'public', file), 'utf8');
+  return (req, res) => res.type('html').send(html.replaceAll('__ORIGIN__', PUBLIC_URL || `${req.protocol}://${req.get('host')}`));
+}
+const pageIndex = sendPage('index.html');
+const pageLogin = sendPage('login.html');
+
+// SNS のプレビュー用クローラーはログインできないので、OGP 画像だけは合言葉なしで配る
+app.get('/iruinai-ogp.png', (req, res) => res.sendFile(path.join(__dirname, 'public/iruinai-ogp.png')));
+
 if (PASSWORD) {
-  app.get('/login', (req, res) => res.sendFile(path.join(__dirname, 'public/login.html')));
+  app.get('/login', (req, res) => pageLogin(req, res));
 
   app.post('/login', express.urlencoded({ extended: false }), (req, res) => {
     const f = failures.get(req.ip);
@@ -116,6 +129,7 @@ if (PASSWORD) {
   });
 }
 
+app.get(['/', '/index.html'], pageIndex);
 app.use(express.static(path.join(__dirname, 'public')));
 app.use('/uploads', express.static(UPLOAD_DIR));
 app.use('/vendor/fullcalendar', express.static(path.join(__dirname, 'node_modules/fullcalendar')));
