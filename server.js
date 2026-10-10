@@ -25,6 +25,15 @@ db.exec(`
     end TEXT NOT NULL,
     note TEXT NOT NULL DEFAULT ''
   );
+  -- person_id が NULL のメモは「部屋」のメモ
+  CREATE TABLE IF NOT EXISTS memos (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    person_id INTEGER REFERENCES people(id) ON DELETE CASCADE,
+    title TEXT NOT NULL,
+    all_day INTEGER NOT NULL DEFAULT 0,
+    start TEXT NOT NULL,
+    end TEXT NOT NULL
+  );
 `);
 
 const ALLOWED_EXT = { 'image/png': '.png', 'image/jpeg': '.jpg', 'image/gif': '.gif', 'image/webp': '.webp' };
@@ -147,6 +156,71 @@ app.put('/api/stays/:id', (req, res) => {
 
 app.delete('/api/stays/:id', (req, res) => {
   db.prepare('DELETE FROM stays WHERE id = ?').run(req.params.id);
+  res.status(204).end();
+});
+
+// ---- memos ----
+// 終日は YYYY-MM-DD（end は翌日・排他的）、時間指定は YYYY-MM-DDTHH:MM:SS
+const MEMO_DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
+const MEMO_DATETIME_RE = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}$/;
+
+function validMemoRange(allDay, start, end) {
+  const re = allDay ? MEMO_DATE_RE : MEMO_DATETIME_RE;
+  return re.test(start) && re.test(end) && start < end;
+}
+
+function memoTargetOk(personId) {
+  return personId === null || !!db.prepare('SELECT 1 FROM people WHERE id = ?').get(personId);
+}
+
+app.get('/api/memos', (req, res) => {
+  const { start, end } = req.query;
+  const rows = start && end
+    ? db.prepare('SELECT * FROM memos WHERE end > ? AND start < ? ORDER BY start').all(start, end)
+    : db.prepare('SELECT * FROM memos ORDER BY start').all();
+  res.json(rows);
+});
+
+app.post('/api/memos/batch', (req, res) => {
+  const { items } = req.body || {};
+  const title = typeof req.body?.title === 'string' ? req.body.title.trim() : '';
+  const personId = req.body?.person_id ?? null;
+  const allDay = req.body?.all_day ? 1 : 0;
+  if (!title || title.length > 100) return res.status(400).json({ error: '内容を入力してください（100字まで）' });
+  if (!Array.isArray(items) || !items.length || items.length > 100
+    || !items.every((it) => it && validMemoRange(allDay, it.start, it.end))) {
+    return res.status(400).json({ error: '入力が不正です' });
+  }
+  if (!memoTargetOk(personId)) return res.status(400).json({ error: '人が存在しません' });
+  const insert = db.prepare('INSERT INTO memos (person_id, title, all_day, start, end) VALUES (?, ?, ?, ?, ?)');
+  db.exec('BEGIN');
+  try {
+    for (const it of items) insert.run(personId, title, allDay, it.start, it.end);
+    db.exec('COMMIT');
+  } catch (err) {
+    db.exec('ROLLBACK');
+    throw err;
+  }
+  res.status(201).json({ created: items.length });
+});
+
+app.put('/api/memos/:id', (req, res) => {
+  const m = db.prepare('SELECT * FROM memos WHERE id = ?').get(req.params.id);
+  if (!m) return res.status(404).json({ error: 'not found' });
+  const b = { ...m, ...req.body };
+  const title = String(b.title ?? '').trim();
+  const allDay = b.all_day ? 1 : 0;
+  const personId = b.person_id ?? null;
+  if (!title || title.length > 100) return res.status(400).json({ error: '内容を入力してください（100字まで）' });
+  if (!validMemoRange(allDay, b.start, b.end)) return res.status(400).json({ error: '入力が不正です' });
+  if (!memoTargetOk(personId)) return res.status(400).json({ error: '人が存在しません' });
+  db.prepare('UPDATE memos SET person_id = ?, title = ?, all_day = ?, start = ?, end = ? WHERE id = ?')
+    .run(personId, title, allDay, b.start, b.end, m.id);
+  res.json(db.prepare('SELECT * FROM memos WHERE id = ?').get(m.id));
+});
+
+app.delete('/api/memos/:id', (req, res) => {
+  db.prepare('DELETE FROM memos WHERE id = ?').run(req.params.id);
   res.status(204).end();
 });
 

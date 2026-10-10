@@ -12,18 +12,23 @@
   <header class="topbar">
     <h1>在室カレンダー</h1>
     <div id="people" class="people"></div>
-    <button id="addPersonBtn" class="btn" title="人を追加">＋<span class="label"> 人を追加</span></button>
+    <button id="addPersonBtn" class="btn icon-btn" title="人を追加" aria-label="人を追加"><svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="9" cy="9" r="4"/><path d="M2 21v-1a7 7 0 0 1 14 0v1"/><path d="M19 2v6M16 5h6"/></svg></button>
   </header>
 
   <main>
     <div id="calendar"></div>
   </main>
 
-  <button id="addStayBtn" class="fab" title="在室を追加" aria-label="在室を追加">＋</button>
+  <button id="addMemoBtn" class="fab small" title="メモを追加" aria-label="メモを追加"><svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="5" y="3" width="14" height="18" rx="2"/><path d="M9 8h6M9 12h6M9 16h3"/></svg></button>
+  <button id="addStayBtn" class="fab" title="在室を追加" aria-label="在室を追加"><svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg></button>
 
   <!-- 在室の追加・編集 -->
   <dialog id="stayDialog">
     <form id="stayForm" method="dialog">
+      <div class="mode-tabs" id="stayTabs">
+        <button type="button" class="active">在室</button>
+        <button type="button" id="toMemoTab">メモ</button>
+      </div>
       <h2 id="stayTitle">在室を追加</h2>
       <label>だれ</label>
       <div id="personPicker" class="picker"></div>
@@ -46,6 +51,44 @@
       <p class="error" id="stayError"></p>
       <div class="actions">
         <button type="button" id="stayDelete" class="btn danger">削除</button>
+        <span class="spacer"></span>
+        <button type="button" class="btn" data-close>キャンセル</button>
+        <button type="submit" class="btn primary">保存</button>
+      </div>
+    </form>
+  </dialog>
+
+  <!-- メモの追加・編集 -->
+  <dialog id="memoDialog">
+    <form id="memoForm" method="dialog">
+      <div class="mode-tabs" id="memoTabs">
+        <button type="button" id="toStayTab">在室</button>
+        <button type="button" class="active">メモ</button>
+      </div>
+      <h2 id="memoTitle">メモを追加</h2>
+      <label>だれ／部屋</label>
+      <div id="memoPicker" class="picker"></div>
+      <label>内容<input type="text" name="title" maxlength="100" placeholder="例：出張、休み、大掃除"></label>
+      <label class="check"><input type="checkbox" name="allDay"> 終日</label>
+      <div id="memoMulti">
+        <label>日付 <span id="memoDateCount" class="count"></span></label>
+        <div id="memoMiniCal" class="minical"></div>
+        <div class="minical-foot">
+          <span class="hint">終日で続けて選んだ日は、1本の期間メモになります</span>
+          <button type="button" id="memoClearDates" class="btn link">クリア</button>
+        </div>
+      </div>
+      <div id="memoSingle" class="row">
+        <label id="memoStartLabel">日付<input type="date" name="startDate"></label>
+        <label id="memoEndDateWrap">終了日<input type="date" name="endDate"></label>
+      </div>
+      <div id="memoTimes" class="row">
+        <label>開始<input type="time" name="startTime" step="900"></label>
+        <label>終了<input type="time" name="endTime" step="900"></label>
+      </div>
+      <p class="error" id="memoError"></p>
+      <div class="actions">
+        <button type="button" id="memoDelete" class="btn danger">削除</button>
         <span class="spacer"></span>
         <button type="button" class="btn" data-close>キャンセル</button>
         <button type="submit" class="btn primary">保存</button>

@@ -1,5 +1,6 @@
 let people = [];
-const hidden = new Set(); // 非表示中の person_id
+const ROOM = 'room'; // 部屋のメモを表すキー
+const hidden = new Set(); // 非表示中の person_id（部屋は ROOM）
 let calendar;
 
 const $ = (sel) => document.querySelector(sel);
@@ -32,10 +33,54 @@ function avatar(p, cls = '') {
 
 const personById = (id) => people.find((p) => p.id === id);
 
+// 線画アイコン（絵文字は使わない）
+const ICONS = {
+  room: '<path d="M3 11l9-8 9 8"/><path d="M5 10v10h14V10"/><path d="M10 20v-6h4v6"/>',
+  pencil: '<path d="M4 20h4L19 9l-4-4L4 16z"/><path d="M14 6l4 4"/>',
+};
+function icon(name) {
+  const el = document.createElement('span');
+  el.className = 'ico-wrap';
+  el.innerHTML = `<svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${ICONS[name]}</svg>`;
+  return el;
+}
+
+// 部屋のアイコン（人のアバターと同じ丸）
+function roomAvatar(cls = '') {
+  const el = document.createElement('span');
+  el.className = 'avatar room ' + cls;
+  el.append(icon('room'));
+  return el;
+}
+
+// #rrggbb を白と混ぜて薄くする（a = 元の色の割合）
+function tint(hex, a) {
+  const n = parseInt(hex.slice(1), 16);
+  const mix = (c) => Math.round(c * a + 255 * (1 - a));
+  return `rgb(${mix(n >> 16)}, ${mix((n >> 8) & 255)}, ${mix(n & 255)})`;
+}
+
+const addDays = (dateStr, n) => {
+  const d = new Date(dateStr + 'T00:00:00');
+  d.setDate(d.getDate() + n);
+  return toDate(d);
+};
+
 // ---------- 上部の人一覧 ----------
 function renderPeople() {
   const box = $('#people');
   box.replaceChildren();
+  // 部屋チップ：部屋のメモの表示/非表示
+  const room = document.createElement('div');
+  room.className = 'person-chip room-chip' + (hidden.has(ROOM) ? ' off' : '');
+  room.title = 'クリックで部屋のメモを表示/非表示';
+  room.append(roomAvatar(), '部屋');
+  room.onclick = () => {
+    hidden.has(ROOM) ? hidden.delete(ROOM) : hidden.add(ROOM);
+    renderPeople();
+    calendar.refetchEvents();
+  };
+  box.append(room);
   for (const p of people) {
     const chip = document.createElement('div');
     chip.className = 'person-chip' + (hidden.has(p.id) ? ' off' : '');
@@ -44,7 +89,7 @@ function renderPeople() {
     chip.append(avatar(p), p.name);
     const edit = document.createElement('button');
     edit.className = 'edit';
-    edit.textContent = '✎';
+    edit.append(icon('pencil'));
     edit.title = '編集';
     edit.onclick = (e) => { e.stopPropagation(); openPersonDialog(p); };
     chip.append(edit);
@@ -74,7 +119,7 @@ function initCalendar() {
     buttonText: { today: '今日', month: '月', week: '週', day: '日' },
     height: 'auto',
     nowIndicator: true,
-    allDaySlot: false,
+    allDayText: '終日',
     scrollTime: '08:00:00',
     slotDuration: '00:30:00',
     snapDuration: '00:15:00',
@@ -88,7 +133,8 @@ function initCalendar() {
     selectLongPressDelay: 300,
     eventLongPressDelay: 400,
     // 日付は数字だけ（「日」を付けない）
-    dayCellContent: (arg) => ({ html: String(arg.date.getDate()) }),
+    // 週・日の終日欄には日付を出さない
+    dayCellContent: (arg) => ({ html: arg.view.type === 'dayGridMonth' ? String(arg.date.getDate()) : '' }),
     // 週・日の見出しは「曜日／日付」の2段
     dayHeaderContent: (arg) => {
       if (arg.view.type === 'dayGridMonth') return WEEKDAYS[arg.date.getDay()];
@@ -108,28 +154,46 @@ function initCalendar() {
     dateClick: (info) => {
       if (isMobile() && info.view.type === 'dayGridMonth') calendar.changeView('timeGridDay', info.date);
     },
-    events: async (info) => {
-      const s = info.startStr.slice(0, 19);
-      const e = info.endStr.slice(0, 19);
-      const stays = await api('GET', `/api/stays?start=${encodeURIComponent(s)}&end=${encodeURIComponent(e)}`);
-      return stays
-        .filter((st) => personById(st.person_id) && !hidden.has(st.person_id))
-        .map((st) => {
-          const p = personById(st.person_id);
-          return {
-            id: String(st.id), start: st.start, end: st.end,
-            backgroundColor: p.color, borderColor: p.color,
-            extendedProps: { stay: st },
-          };
-        });
-    },
+    eventSources: [
+      // 在室
+      async (info) => {
+        const stays = await api('GET', `/api/stays?${rangeQuery(info)}`);
+        return stays
+          .filter((st) => personById(st.person_id) && !hidden.has(st.person_id))
+          .map((st) => {
+            const p = personById(st.person_id);
+            return {
+              id: 's' + st.id, start: st.start, end: st.end,
+              backgroundColor: p.color, borderColor: p.color,
+              extendedProps: { kind: 'stay', stay: st },
+            };
+          });
+      },
+      // メモ（人のメモは人の色を薄く、部屋のメモはグレー）
+      async (info) => {
+        const memos = await api('GET', `/api/memos?${rangeQuery(info)}`);
+        return memos
+          .filter((m) => (m.person_id === null ? !hidden.has(ROOM) : personById(m.person_id) && !hidden.has(m.person_id)))
+          .map((m) => {
+            const p = m.person_id === null ? null : personById(m.person_id);
+            return {
+              id: 'm' + m.id, start: m.start, end: m.end, allDay: !!m.all_day,
+              backgroundColor: p ? tint(p.color, 0.22) : '#eef0f3',
+              borderColor: p ? p.color : '#8a919c',
+              textColor: '#1f2328',
+              classNames: ['memo-event'],
+              extendedProps: { kind: 'memo', memo: m },
+            };
+          });
+      },
+    ],
     // 祝日は赤、日曜・土曜は CSS（fc-day-sun / fc-day-sat）で色付け
     dayCellClassNames: (arg) => (holidayName(arg.date) ? ['holiday'] : []),
     dayHeaderClassNames: (arg) => (holidayName(arg.date) ? ['holiday'] : []),
     dayCellDidMount: (arg) => {
       const name = holidayName(arg.date);
       const top = arg.el.querySelector('.fc-daygrid-day-top');
-      if (!name || !top) return;
+      if (!name || !top || arg.view.type !== 'dayGridMonth') return;
       const label = document.createElement('span');
       label.className = 'holiday-name';
       label.textContent = name;
@@ -144,6 +208,7 @@ function initCalendar() {
       }
     },
     eventContent: (arg) => {
+      if (arg.event.extendedProps.kind === 'memo') return memoContent(arg);
       const st = arg.event.extendedProps.stay;
       const p = personById(st.person_id);
       const wrap = document.createElement('div');
@@ -178,6 +243,12 @@ function initCalendar() {
       let start = info.start;
       let end = info.end;
       const dates = [];
+      // 週・日の終日欄を選んだときは終日メモ
+      if (info.allDay && info.view.type !== 'dayGridMonth') {
+        for (const d = new Date(info.start); d < info.end; d.setDate(d.getDate() + 1)) dates.push(toDate(d));
+        openMemoDialog(null, { dates, allDay: true, startTime: '09:00', endTime: '10:00' });
+        return;
+      }
       if (info.allDay) {
         // 月表示で日付クリック／ドラッグ：選んだ日すべてに 9:00-18:00 を初期値
         for (const d = new Date(info.start); d < info.end; d.setDate(d.getDate() + 1)) dates.push(toDate(d));
@@ -187,15 +258,30 @@ function initCalendar() {
       openStayDialog(null, start, end, dates);
     },
     eventClick: (info) => {
-      const st = info.event.extendedProps.stay;
-      openStayDialog(st, new Date(st.start), new Date(st.end));
+      const { kind, stay, memo } = info.event.extendedProps;
+      if (kind === 'memo') return openMemoDialog(memo);
+      openStayDialog(stay, new Date(stay.start), new Date(stay.end));
     },
     eventChange: async (info) => {
+      const ev = info.event;
+      const { kind, stay, memo } = ev.extendedProps;
       try {
-        await api('PUT', `/api/stays/${info.event.id}`, {
-          start: toLocalIso(info.event.start),
-          end: toLocalIso(info.event.end),
-        });
+        if (kind === 'memo') {
+          let start;
+          let end;
+          if (ev.allDay) {
+            start = toDate(ev.start);
+            end = ev.end ? toDate(ev.end) : addDays(start, 1);
+          } else {
+            start = toLocalIso(ev.start);
+            end = toLocalIso(ev.end || new Date(ev.start.getTime() + 60 * 60 * 1000));
+          }
+          await api('PUT', `/api/memos/${memo.id}`, { start, end, all_day: ev.allDay });
+        } else {
+          // 在室は終日にしない
+          if (ev.allDay || !ev.end) { info.revert(); return; }
+          await api('PUT', `/api/stays/${stay.id}`, { start: toLocalIso(ev.start), end: toLocalIso(ev.end) });
+        }
         calendar.refetchEvents();
       } catch (err) {
         alert(err.message);
@@ -204,6 +290,33 @@ function initCalendar() {
     },
   });
   calendar.render();
+}
+
+const rangeQuery = (info) =>
+  `start=${encodeURIComponent(info.startStr.slice(0, 19))}&end=${encodeURIComponent(info.endStr.slice(0, 19))}`;
+
+// メモの表示：アイコン＋内容（時間指定は時間も）
+function memoContent(arg) {
+  const m = arg.event.extendedProps.memo;
+  const p = m.person_id === null ? null : personById(m.person_id);
+  const wrap = document.createElement('div');
+  wrap.className = 'memo';
+  const head = document.createElement('div');
+  head.className = 'stay-head';
+  const text = document.createElement('span');
+  text.className = 'mt';
+  const timed = !arg.event.allDay;
+  // 月表示の時間指定は時間も付ける（スマホは狭いので内容だけ）
+  text.textContent = timed && arg.view.type === 'dayGridMonth' && !isMobile() ? `${arg.timeText} ${m.title}` : m.title;
+  head.append(p ? avatar(p, 'small') : roomAvatar('small'), text);
+  wrap.append(head);
+  if (timed && arg.view.type !== 'dayGridMonth') {
+    const time = document.createElement('div');
+    time.className = 'stay-time';
+    time.textContent = arg.timeText;
+    wrap.append(time);
+  }
+  return { domNodes: [wrap] };
 }
 
 // ---------- 在室ダイアログ ----------
@@ -226,9 +339,10 @@ function renderPicker() {
 // ---------- 複数日選択のミニカレンダー ----------
 let selectedDates = new Set();
 let miniMonth = new Date();
+let miniTarget = { cal: '#miniCal', count: '#dateCount' }; // 在室とメモで描画先を切り替える
 
 function renderMiniCal() {
-  const box = $('#miniCal');
+  const box = $(miniTarget.cal);
   box.replaceChildren();
   const y = miniMonth.getFullYear();
   const m = miniMonth.getMonth();
@@ -279,10 +393,11 @@ function renderMiniCal() {
     grid.append(b);
   }
   box.append(head, grid);
-  $('#dateCount').textContent = selectedDates.size ? `${selectedDates.size}日 選択中` : '';
+  $(miniTarget.count).textContent = selectedDates.size ? `${selectedDates.size}日 選択中` : '';
 }
 
 $('#clearDates').addEventListener('click', () => { selectedDates.clear(); renderMiniCal(); });
+$('#memoClearDates').addEventListener('click', () => { selectedDates.clear(); renderMiniCal(); });
 
 function openStayDialog(stay, start, end, dates = []) {
   if (!people.length) {
@@ -298,8 +413,10 @@ function openStayDialog(stay, start, end, dates = []) {
   $('#singleDate').hidden = !stay;
   $('#multiDate').hidden = !!stay;
   f.date.required = !!stay;
+  $('#stayTabs').hidden = !!stay;
   selectedDates = new Set(dates.length ? dates : [toDate(start)]);
   miniMonth = new Date(start.getFullYear(), start.getMonth(), 1);
+  miniTarget = { cal: '#miniCal', count: '#dateCount' };
   renderMiniCal();
   f.startTime.value = toTime(start);
   // 日をまたぐ選択は終了を 23:59 に丸める
@@ -346,6 +463,153 @@ $('#stayDelete').addEventListener('click', async () => {
   await api('DELETE', `/api/stays/${editingStay.id}`);
   $('#stayDialog').close();
   calendar.refetchEvents();
+});
+
+// ---------- メモダイアログ ----------
+let editingMemo = null;
+let memoTarget = ROOM;
+
+function renderMemoPicker() {
+  const box = $('#memoPicker');
+  box.replaceChildren();
+  const room = document.createElement('button');
+  room.type = 'button';
+  room.className = memoTarget === ROOM ? 'selected' : '';
+  room.append(roomAvatar(), '部屋');
+  room.onclick = () => { memoTarget = ROOM; renderMemoPicker(); };
+  box.append(room);
+  for (const p of people) {
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.className = p.id === memoTarget ? 'selected' : '';
+    b.append(avatar(p), p.name);
+    b.onclick = () => { memoTarget = p.id; renderMemoPicker(); };
+    box.append(b);
+  }
+}
+
+// 終日の切替・新規/編集で入力欄の出し分け
+function updateMemoFields() {
+  const f = $('#memoForm');
+  const allDay = f.allDay.checked;
+  $('#memoMulti').hidden = !!editingMemo;
+  $('#memoSingle').hidden = !editingMemo;
+  $('#memoEndDateWrap').hidden = !allDay;
+  $('#memoStartLabel').firstChild.textContent = allDay ? '開始日' : '日付';
+  $('#memoTimes').hidden = allDay;
+}
+
+// opts: { dates, allDay, startTime, endTime }（新規のときの初期値）
+function openMemoDialog(memo, opts = {}) {
+  editingMemo = memo;
+  const f = $('#memoForm');
+  f.reset();
+  $('#memoTitle').textContent = memo ? 'メモを編集' : 'メモを追加';
+  $('#memoTabs').hidden = !!memo;
+  $('#memoDelete').hidden = !memo;
+  $('#memoError').textContent = '';
+  if (memo) {
+    memoTarget = memo.person_id === null ? ROOM : memo.person_id;
+    f.title.value = memo.title;
+    f.allDay.checked = !!memo.all_day;
+    f.startDate.value = memo.start.slice(0, 10);
+    if (memo.all_day) {
+      f.endDate.value = addDays(memo.end, -1); // 保存は翌日（排他的）、表示は最終日
+      f.startTime.value = '09:00';
+      f.endTime.value = '10:00';
+    } else {
+      f.endDate.value = f.startDate.value;
+      f.startTime.value = memo.start.slice(11, 16);
+      f.endTime.value = memo.end.slice(11, 16);
+    }
+  } else {
+    memoTarget = ROOM;
+    f.allDay.checked = opts.allDay ?? true;
+    f.startTime.value = opts.startTime || '09:00';
+    f.endTime.value = opts.endTime || '10:00';
+    const first = opts.dates?.length ? opts.dates : [toDate(defaultDay())];
+    selectedDates = new Set(first);
+    const d0 = new Date([...selectedDates].sort()[0] + 'T00:00:00');
+    miniMonth = new Date(d0.getFullYear(), d0.getMonth(), 1);
+    miniTarget = { cal: '#memoMiniCal', count: '#memoDateCount' };
+    renderMiniCal();
+  }
+  renderMemoPicker();
+  updateMemoFields();
+  $('#memoDialog').showModal();
+}
+
+$('#memoForm').allDay.addEventListener('change', updateMemoFields);
+
+// 連続した日付をまとめて [{start, end(翌日)}] にする
+function dateRuns(dates) {
+  const runs = [];
+  for (const d of [...dates].sort()) {
+    const last = runs[runs.length - 1];
+    if (last && last.end === d) last.end = addDays(d, 1);
+    else runs.push({ start: d, end: addDays(d, 1) });
+  }
+  return runs;
+}
+
+$('#memoForm').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const f = e.target;
+  const err = (msg) => { $('#memoError').textContent = msg; };
+  const title = f.title.value.trim();
+  if (!title) return err('内容を入力してください');
+  const allDay = f.allDay.checked;
+  if (!allDay && f.startTime.value >= f.endTime.value) return err('終了は開始より後にしてください');
+  const person_id = memoTarget === ROOM ? null : memoTarget;
+  try {
+    if (editingMemo) {
+      let start;
+      let end;
+      if (allDay) {
+        if (!f.startDate.value || !f.endDate.value || f.endDate.value < f.startDate.value) return err('終了日は開始日以降にしてください');
+        start = f.startDate.value;
+        end = addDays(f.endDate.value, 1);
+      } else {
+        if (!f.startDate.value) return err('日付を入力してください');
+        start = `${f.startDate.value}T${f.startTime.value}:00`;
+        end = `${f.startDate.value}T${f.endTime.value}:00`;
+      }
+      await api('PUT', `/api/memos/${editingMemo.id}`, { person_id, title, all_day: allDay, start, end });
+    } else {
+      if (!selectedDates.size) return err('日付を選んでください');
+      const items = allDay
+        ? dateRuns(selectedDates)
+        : [...selectedDates].sort().map((d) => ({ start: `${d}T${f.startTime.value}:00`, end: `${d}T${f.endTime.value}:00` }));
+      await api('POST', '/api/memos/batch', { person_id, title, all_day: allDay, items });
+    }
+    $('#memoDialog').close();
+    calendar.refetchEvents();
+  } catch (e2) {
+    err(e2.message);
+  }
+});
+
+$('#memoDelete').addEventListener('click', async () => {
+  if (!editingMemo || !confirm('このメモを削除しますか？')) return;
+  await api('DELETE', `/api/memos/${editingMemo.id}`);
+  $('#memoDialog').close();
+  calendar.refetchEvents();
+});
+
+// 在室⇄メモの切替（選んだ日付と時間を引き継ぐ）
+$('#toMemoTab').addEventListener('click', () => {
+  const f = $('#stayForm');
+  const dates = [...selectedDates];
+  $('#stayDialog').close();
+  openMemoDialog(null, { dates, allDay: true, startTime: f.startTime.value, endTime: f.endTime.value });
+});
+$('#toStayTab').addEventListener('click', () => {
+  const f = $('#memoForm');
+  const dates = [...selectedDates].sort();
+  $('#memoDialog').close();
+  const day = dates[0] || toDate(defaultDay());
+  const times = f.allDay.checked ? ['09:00', '18:00'] : [f.startTime.value, f.endTime.value];
+  openStayDialog(null, new Date(`${day}T${times[0]}:00`), new Date(`${day}T${times[1]}:00`), dates);
 });
 
 // ---------- 人ダイアログ ----------
@@ -421,7 +685,7 @@ $('#personForm').addEventListener('submit', async (e) => {
 });
 
 $('#personDelete').addEventListener('click', async () => {
-  if (!editingPerson || !confirm(`${editingPerson.name} を削除しますか？\nこの人の在室記録もすべて消えます。`)) return;
+  if (!editingPerson || !confirm(`${editingPerson.name} を削除しますか？\nこの人の在室記録とメモもすべて消えます。`)) return;
   await api('DELETE', `/api/people/${editingPerson.id}`);
   $('#personDialog').close();
   await loadPeople();
@@ -430,11 +694,18 @@ $('#personDelete').addEventListener('click', async () => {
 
 $('#addPersonBtn').addEventListener('click', () => openPersonDialog(null));
 
-// ＋ボタン：表示中の日（今日が範囲内なら今日）に 9:00-18:00 で追加
-$('#addStayBtn').addEventListener('click', () => {
+// 表示中の日（今日が範囲内なら今日）
+function defaultDay() {
   const view = calendar.view;
   const now = new Date();
-  const day = now >= view.currentStart && now < view.currentEnd ? now : view.currentStart;
+  return now >= view.currentStart && now < view.currentEnd ? now : view.currentStart;
+}
+
+$('#addMemoBtn').addEventListener('click', () => openMemoDialog(null));
+
+// ＋ボタン：表示中の日に 9:00-18:00 で追加
+$('#addStayBtn').addEventListener('click', () => {
+  const day = defaultDay();
   const start = new Date(day); start.setHours(9, 0, 0, 0);
   const end = new Date(day); end.setHours(18, 0, 0, 0);
   openStayDialog(null, start, end, []);
