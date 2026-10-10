@@ -8,8 +8,12 @@
     "start": "node server.js"
   },
   "dependencies": {
+    "compression": "^1.8.2",
     "express": "^5.2.1",
     "fullcalendar": "^6.1.21",
     "multer": "^2.4.0"
+  },
+  "optionalDependencies": {
+    "sharp": "^0.35.5"
   }
 }

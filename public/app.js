@@ -744,13 +744,44 @@ $('#removeIconBtn').addEventListener('click', () => {
   updatePreview();
 });
 
+// アイコンは最大表示（72px）の2倍の正方形に縮小して WebP にする（通信と保存を軽くするため）
+const ICON_SIZE = 144;
+async function shrinkIcon(file) {
+  try {
+    const bmp = await createImageBitmap(file);
+    const side = Math.min(bmp.width, bmp.height);
+    const canvas = document.createElement('canvas');
+    canvas.width = canvas.height = ICON_SIZE;
+    canvas.getContext('2d').drawImage(bmp, (bmp.width - side) / 2, (bmp.height - side) / 2, side, side, 0, 0, ICON_SIZE, ICON_SIZE);
+    bmp.close();
+    const toBlob = (type, q) => new Promise((resolve) => canvas.toBlob(resolve, type, q));
+    let blob = await toBlob('image/webp', 0.8);
+    if (blob?.type !== 'image/webp') {
+      // WebP 非対応のブラウザ向け。JPEG は透明を持てないので白で塗ってから
+      const ctx = canvas.getContext('2d');
+      ctx.globalCompositeOperation = 'destination-over';
+      ctx.fillStyle = '#fff';
+      ctx.fillRect(0, 0, ICON_SIZE, ICON_SIZE);
+      blob = await toBlob('image/jpeg', 0.85);
+    }
+    return blob ? { blob, name: blob.type === 'image/webp' ? 'icon.webp' : 'icon.jpg' } : null;
+  } catch {
+    return null; // 読み込めない形式などは元のファイルをそのまま送る
+  }
+}
+
 $('#personForm').addEventListener('submit', async (e) => {
   e.preventDefault();
   const f = e.target;
   const fd = new FormData();
   fd.append('name', f.name.value.trim());
   fd.append('color', f.color.value);
-  if (f.icon.files[0]) fd.append('icon', f.icon.files[0]);
+  const file = f.icon.files[0];
+  if (file) {
+    const small = await shrinkIcon(file);
+    if (small) fd.append('icon', small.blob, small.name);
+    else fd.append('icon', file);
+  }
   if (removeIcon) fd.append('removeIcon', '1');
   try {
     if (editingPerson) await api('PUT', `/api/people/${editingPerson.id}`, fd);

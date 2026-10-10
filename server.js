@@ -1,4 +1,5 @@
 const express = require('express');
+const compression = require('compression');
 const multer = require('multer');
 const path = require('path');
 const fs = require('fs');
@@ -25,6 +26,8 @@ db.exec(`
     end TEXT NOT NULL,
     note TEXT NOT NULL DEFAULT ''
   );
+  CREATE INDEX IF NOT EXISTS idx_stays_start ON stays(start);
+  CREATE INDEX IF NOT EXISTS idx_stays_person ON stays(person_id);
   -- person_id が NULL のメモは「部屋」のメモ
   CREATE TABLE IF NOT EXISTS memos (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -34,6 +37,8 @@ db.exec(`
     start TEXT NOT NULL,
     end TEXT NOT NULL
   );
+  CREATE INDEX IF NOT EXISTS idx_memos_start ON memos(start);
+  CREATE INDEX IF NOT EXISTS idx_memos_person ON memos(person_id);
 `);
 
 const ALLOWED_EXT = { 'image/png': '.png', 'image/jpeg': '.jpg', 'image/gif': '.gif', 'image/webp': '.webp' };
@@ -53,6 +58,7 @@ function removeIcon(iconPath) {
 
 const COLOR_RE = /^#[0-9a-fA-F]{6}$/;
 const app = express();
+app.use(compression());
 app.use(express.json());
 
 // ---- 合言葉 ----
@@ -285,8 +291,40 @@ app.use((err, req, res, next) => {
   res.status(400).json({ error: msg });
 });
 
+// ---- 起動時: 既存アイコンを 144px の WebP に縮小 ----
+// 変換済み（.webp かつ小さい）のものは触らない。何度起動しても同じ結果になる
+const ICON_SIZE = 144;
+const ICON_OK_BYTES = 30 * 1024;
+
+async function shrinkExistingIcons() {
+  let sharp;
+  try {
+    sharp = require('sharp');
+  } catch {
+    console.log('アイコンの縮小: sharp が無いためスキップ（npm install で入ります）');
+    return;
+  }
+  let done = 0;
+  for (const p of db.prepare('SELECT id, icon_path FROM people WHERE icon_path IS NOT NULL').all()) {
+    const file = path.join(UPLOAD_DIR, path.basename(p.icon_path));
+    try {
+      if (!fs.existsSync(file)) continue;
+      if (path.extname(file) === '.webp' && fs.statSync(file).size <= ICON_OK_BYTES) continue;
+      const name = crypto.randomUUID() + '.webp';
+      await sharp(file).rotate().resize(ICON_SIZE, ICON_SIZE, { fit: 'cover' }).webp({ quality: 80 }).toFile(path.join(UPLOAD_DIR, name));
+      db.prepare('UPDATE people SET icon_path = ? WHERE id = ?').run('/uploads/' + name, p.id);
+      removeIcon(p.icon_path); // DB を更新してから古い画像を消す
+      done++;
+    } catch (err) {
+      console.log(`アイコンの縮小に失敗（元の画像のまま）: person ${p.id}: ${err.message}`);
+    }
+  }
+  console.log(done ? `アイコンを縮小: ${done}件` : 'アイコンの縮小: 対象なし');
+}
+
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, '0.0.0.0', () => {
   console.log(`在室カレンダー: http://localhost:${PORT}`);
   console.log(PASSWORD ? '合言葉: 有効' : '合言葉: 無効（ROOM_PASSWORD 未設定）');
+  shrinkExistingIcons().catch((err) => console.log('アイコンの縮小に失敗:', err.message));
 });
