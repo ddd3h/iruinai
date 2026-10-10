@@ -78,13 +78,15 @@
           <button type="button" id="memoClearDates" class="btn link">クリア</button>
         </div>
       </div>
-      <div id="memoSingle" class="row">
-        <label id="memoStartLabel">日付<input type="date" name="startDate"></label>
-        <label id="memoEndDateWrap">終了日<input type="date" name="endDate"></label>
-      </div>
-      <div id="memoTimes" class="row">
-        <label>開始<input type="time" name="startTime" step="900"></label>
-        <label>終了<input type="time" name="endTime" step="900"></label>
+      <div id="memoRange">
+        <div class="row">
+          <label>開始日<input type="date" name="startDate"></label>
+          <label class="memo-time">開始時間<input type="time" name="startTime" step="900"></label>
+        </div>
+        <div class="row">
+          <label>終了日<input type="date" name="endDate"></label>
+          <label class="memo-time">終了時間<input type="time" name="endTime" step="900"></label>
+        </div>
       </div>
       <p class="error" id="memoError"></p>
       <div class="actions">

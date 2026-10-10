@@ -492,11 +492,11 @@ function renderMemoPicker() {
 function updateMemoFields() {
   const f = $('#memoForm');
   const allDay = f.allDay.checked;
-  $('#memoMulti').hidden = !!editingMemo;
-  $('#memoSingle').hidden = !editingMemo;
-  $('#memoEndDateWrap').hidden = !allDay;
-  $('#memoStartLabel').firstChild.textContent = allDay ? '開始日' : '日付';
-  $('#memoTimes').hidden = allDay;
+  // 新規の終日だけミニカレンダーで複数日選択。それ以外は開始〜終了（時間指定は日付＋時間）
+  const multi = !editingMemo && allDay;
+  $('#memoMulti').hidden = !multi;
+  $('#memoRange').hidden = multi;
+  document.querySelectorAll('#memoForm .memo-time').forEach((el) => { el.hidden = allDay; });
 }
 
 // opts: { dates, allDay, startTime, endTime }（新規のときの初期値）
@@ -518,7 +518,7 @@ function openMemoDialog(memo, opts = {}) {
       f.startTime.value = '09:00';
       f.endTime.value = '10:00';
     } else {
-      f.endDate.value = f.startDate.value;
+      f.endDate.value = memo.end.slice(0, 10);
       f.startTime.value = memo.start.slice(11, 16);
       f.endTime.value = memo.end.slice(11, 16);
     }
@@ -533,6 +533,8 @@ function openMemoDialog(memo, opts = {}) {
     miniMonth = new Date(d0.getFullYear(), d0.getMonth(), 1);
     miniTarget = { cal: '#memoMiniCal', count: '#memoDateCount' };
     renderMiniCal();
+    // 時間指定に切り替えたときの初期値（選んだ最初の日）
+    f.startDate.value = f.endDate.value = [...selectedDates].sort()[0];
   }
   renderMemoPicker();
   updateMemoFields();
@@ -559,27 +561,27 @@ $('#memoForm').addEventListener('submit', async (e) => {
   const title = f.title.value.trim();
   if (!title) return err('内容を入力してください');
   const allDay = f.allDay.checked;
-  if (!allDay && f.startTime.value >= f.endTime.value) return err('終了は開始より後にしてください');
   const person_id = memoTarget === ROOM ? null : memoTarget;
+  // 開始〜終了の1件（新規の終日はミニカレンダーから複数件）
+  let items;
+  if (!editingMemo && allDay) {
+    if (!selectedDates.size) return err('日付を選んでください');
+    items = dateRuns(selectedDates);
+  } else if (allDay) {
+    if (!f.startDate.value || !f.endDate.value) return err('日付を入力してください');
+    if (f.endDate.value < f.startDate.value) return err('終了日は開始日以降にしてください');
+    items = [{ start: f.startDate.value, end: addDays(f.endDate.value, 1) }];
+  } else {
+    if (!f.startDate.value || !f.endDate.value || !f.startTime.value || !f.endTime.value) return err('日付と時間を入力してください');
+    const start = `${f.startDate.value}T${f.startTime.value}:00`;
+    const end = `${f.endDate.value}T${f.endTime.value}:00`;
+    if (start >= end) return err('終了は開始より後にしてください');
+    items = [{ start, end }];
+  }
   try {
     if (editingMemo) {
-      let start;
-      let end;
-      if (allDay) {
-        if (!f.startDate.value || !f.endDate.value || f.endDate.value < f.startDate.value) return err('終了日は開始日以降にしてください');
-        start = f.startDate.value;
-        end = addDays(f.endDate.value, 1);
-      } else {
-        if (!f.startDate.value) return err('日付を入力してください');
-        start = `${f.startDate.value}T${f.startTime.value}:00`;
-        end = `${f.startDate.value}T${f.endTime.value}:00`;
-      }
-      await api('PUT', `/api/memos/${editingMemo.id}`, { person_id, title, all_day: allDay, start, end });
+      await api('PUT', `/api/memos/${editingMemo.id}`, { person_id, title, all_day: allDay, ...items[0] });
     } else {
-      if (!selectedDates.size) return err('日付を選んでください');
-      const items = allDay
-        ? dateRuns(selectedDates)
-        : [...selectedDates].sort().map((d) => ({ start: `${d}T${f.startTime.value}:00`, end: `${d}T${f.endTime.value}:00` }));
       await api('POST', '/api/memos/batch', { person_id, title, all_day: allDay, items });
     }
     $('#memoDialog').close();
@@ -605,7 +607,7 @@ $('#toMemoTab').addEventListener('click', () => {
 });
 $('#toStayTab').addEventListener('click', () => {
   const f = $('#memoForm');
-  const dates = [...selectedDates].sort();
+  const dates = f.allDay.checked ? [...selectedDates].sort() : [f.startDate.value].filter(Boolean);
   $('#memoDialog').close();
   const day = dates[0] || toDate(defaultDay());
   const times = f.allDay.checked ? ['09:00', '18:00'] : [f.startTime.value, f.endTime.value];

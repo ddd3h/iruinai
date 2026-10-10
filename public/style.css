@@ -233,7 +233,8 @@ dialog input[type=text], dialog input[type=date], dialog input[type=time] {
 }
 dialog input[type=color] { display: block; margin-top: 4px; width: 60px; height: 34px; border: none; padding: 0; }
 .row { display: flex; gap: 12px; }
-.row label { flex: 1; }
+.row label { flex: 1; min-width: 0; }
+dialog input[type=date], dialog input[type=time] { min-width: 0; }
 .actions { display: flex; gap: 8px; margin-top: 18px; align-items: center; }
 .spacer { flex: 1; }
 .error { color: var(--danger); font-size: 13px; min-height: 1em; margin: 8px 0 0; }
