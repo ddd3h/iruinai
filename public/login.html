@@ -1,0 +1,46 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>在室カレンダー</title>
+  <!-- ログイン前は style.css も読めないので、見た目はここに書く -->
+  <style>
+    * { box-sizing: border-box; }
+    body {
+      margin: 0; min-height: 100vh; display: flex; align-items: center; justify-content: center;
+      padding: 16px; background: #f6f7f9; color: #1f2328;
+      font-family: system-ui, -apple-system, "Hiragino Sans", "Noto Sans JP", sans-serif;
+    }
+    form {
+      width: 100%; max-width: 340px; background: #fff; border: 1px solid #e3e5e8;
+      border-radius: 12px; padding: 24px;
+    }
+    h1 { font-size: 20px; margin: 0 0 16px; }
+    label { display: block; font-size: 14px; color: #6b7280; }
+    input {
+      display: block; width: 100%; margin-top: 6px; padding: 10px 12px; font-size: 16px;
+      border: 1px solid #e3e5e8; border-radius: 8px;
+    }
+    input:focus { outline: 2px solid #4f7cff; outline-offset: -1px; border-color: #4f7cff; }
+    button {
+      width: 100%; margin-top: 16px; padding: 10px; font-size: 16px; font-weight: 600;
+      color: #fff; background: #4f7cff; border: 0; border-radius: 8px; cursor: pointer;
+    }
+    .error { color: #e5484d; font-size: 14px; margin: 10px 0 0; min-height: 1em; }
+  </style>
+</head>
+<body>
+  <form method="post" action="/login">
+    <h1>在室カレンダー</h1>
+    <label>合言葉<input type="password" name="password" required autofocus autocomplete="current-password"></label>
+    <p class="error" id="error"></p>
+    <button type="submit">入る</button>
+  </form>
+  <script>
+    const e = new URLSearchParams(location.search).get('e');
+    document.getElementById('error').textContent =
+      e === 'wrong' ? '合言葉が違います' : e === 'wait' ? '間違いが続いたので、1分ほど待ってからもう一度どうぞ' : '';
+  </script>
+</body>
+</html>

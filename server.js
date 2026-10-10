@@ -54,6 +54,62 @@ function removeIcon(iconPath) {
 const COLOR_RE = /^#[0-9a-fA-F]{6}$/;
 const app = express();
 app.use(express.json());
+
+// ---- 合言葉 ----
+// ROOM_PASSWORD を設定したときだけ有効。未設定なら誰でも開ける（従来どおり）
+const PASSWORD = process.env.ROOM_PASSWORD || '';
+const COOKIE = 'iruinai_auth';
+// Cookie の値は合言葉から作る。合言葉を変えると全員ログアウトされる
+const TOKEN = crypto.createHmac('sha256', PASSWORD).update('iruinai-auth').digest('hex');
+const COOKIE_MAX_AGE = 365 * 24 * 60 * 60; // 1年
+
+function sameText(a, b) {
+  const ha = crypto.createHash('sha256').update(a).digest();
+  const hb = crypto.createHash('sha256').update(b).digest();
+  return crypto.timingSafeEqual(ha, hb);
+}
+
+function readCookie(req, name) {
+  for (const part of (req.headers.cookie || '').split(';')) {
+    const i = part.indexOf('=');
+    if (i > 0 && part.slice(0, i).trim() === name) return part.slice(i + 1).trim();
+  }
+  return '';
+}
+
+// 総当たり対策：同じ IP から5回続けて間違えたら1分待たせる
+const failures = new Map();
+const LOCK_COUNT = 5;
+const LOCK_MS = 60 * 1000;
+
+if (PASSWORD) {
+  app.get('/login', (req, res) => res.sendFile(path.join(__dirname, 'public/login.html')));
+
+  app.post('/login', express.urlencoded({ extended: false }), (req, res) => {
+    const f = failures.get(req.ip);
+    if (f && f.count >= LOCK_COUNT && Date.now() - f.at < LOCK_MS) return res.redirect(303, '/login?e=wait');
+    if (!sameText(String(req.body.password || ''), PASSWORD)) {
+      const count = f && Date.now() - f.at < LOCK_MS ? f.count + 1 : 1;
+      failures.set(req.ip, { count, at: Date.now() });
+      return res.redirect(303, '/login?e=wrong');
+    }
+    failures.delete(req.ip);
+    res.setHeader('Set-Cookie', `${COOKIE}=${TOKEN}; Max-Age=${COOKIE_MAX_AGE}; Path=/; HttpOnly; SameSite=Lax${req.secure ? '; Secure' : ''}`);
+    res.redirect(303, '/');
+  });
+
+  app.get('/logout', (req, res) => {
+    res.setHeader('Set-Cookie', `${COOKIE}=; Max-Age=0; Path=/; HttpOnly; SameSite=Lax`);
+    res.redirect(303, '/login');
+  });
+
+  app.use((req, res, next) => {
+    if (sameText(readCookie(req, COOKIE), TOKEN)) return next();
+    if (req.path.startsWith('/api/')) return res.status(401).json({ error: 'ログインしてください' });
+    res.redirect(303, '/login');
+  });
+}
+
 app.use(express.static(path.join(__dirname, 'public')));
 app.use('/uploads', express.static(UPLOAD_DIR));
 app.use('/vendor/fullcalendar', express.static(path.join(__dirname, 'node_modules/fullcalendar')));
@@ -230,4 +286,7 @@ app.use((err, req, res, next) => {
 });
 
 const PORT = process.env.PORT || 3000;
-app.listen(PORT, '0.0.0.0', () => console.log(`在室カレンダー: http://localhost:${PORT}`));
+app.listen(PORT, '0.0.0.0', () => {
+  console.log(`在室カレンダー: http://localhost:${PORT}`);
+  console.log(PASSWORD ? '合言葉: 有効' : '合言葉: 無効（ROOM_PASSWORD 未設定）');
+});

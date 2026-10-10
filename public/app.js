@@ -17,6 +17,7 @@ async function api(method, url, body) {
     opts.body = JSON.stringify(body);
   }
   const res = await fetch(url, opts);
+  if (res.status === 401) { location.href = '/login'; throw new Error('ログインしてください'); }
   if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || '保存に失敗しました');
   return res.status === 204 ? null : res.json();
 }

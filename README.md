@@ -47,8 +47,20 @@ npm start
 | --- | --- | --- |
 | `PORT` | `3000` | 待ち受けるポート番号 |
 | `DATA_DIR` | `./data` | データベースと画像の保存先 |
+| `ROOM_PASSWORD` | （なし） | 部屋の合言葉。設定すると、開くときに合言葉の入力が必要になります |
 
 例: `PORT=8080 DATA_DIR=/srv/room-calendar npm start`
+
+### 合言葉
+
+`ROOM_PASSWORD=好きな合言葉 npm start` で起動すると、最初に合言葉の入力画面が出ます。
+
+- 全員が同じ合言葉を使います（人ごとのログインではありません）
+- 一度入ると、そのブラウザでは1年間入力不要です
+- 合言葉を変えて再起動すると、全員がもう一度入力することになります
+- `/logout` を開くとログアウトします
+- 同じ端末から5回続けて間違えると、1分間入力できなくなります
+- 通信は暗号化されません（HTTP）。インターネットに公開する場合は HTTPS の下で動かしてください
 
 ## データ
 
@@ -68,6 +80,7 @@ npm start
 ```
 server.js            API・画面ファイル・画像の配信
 public/index.html    画面の骨組みとダイアログ
+public/login.html    合言葉の入力画面
 public/app.js        カレンダーと人の管理
 public/holidays.js   日本の祝日の計算
 public/style.css     見た目
@@ -77,6 +90,8 @@ public/style.css     見た目
 
 | メソッド | パス | 内容 |
 | --- | --- | --- |
+| GET / POST | `/login` | 合言葉の入力（`ROOM_PASSWORD` 設定時のみ） |
+| GET | `/logout` | ログアウト |
 | GET | `/api/people` | 人の一覧 |
 | POST | `/api/people` | 人を追加（multipart: `name`, `color`, `icon`） |
 | PUT | `/api/people/:id` | 人を更新（`removeIcon=1` で画像を外す） |
@@ -95,7 +110,7 @@ public/style.css     見た目
 
 ## 注意事項
 
-- ログイン機能はありません。LANにつながる人なら誰でも閲覧・編集できます。インターネットに公開しないでください。
+- `ROOM_PASSWORD` を設定しない場合、LANにつながる人なら誰でも閲覧・編集できます。
 - 他の人の変更は、ページを開き直すかタブに戻ったときに反映されます（自動更新はしません）。
 - 1件の在室は1日の中で登録します。日付をまたぐ場合は日ごとに分けて登録してください。
 - 祝日は現行の祝日法をもとに計算しています。法改正や特例の年には `public/holidays.js` の修正が必要です。
