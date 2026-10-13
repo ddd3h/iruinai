@@ -197,6 +197,36 @@ dialog label.check input { width: 18px; height: 18px; }
 }
 .fab.small .ico { width: 22px; height: 22px; }
 
+/* 変更の通知（下中央）と「元に戻す」 */
+.toast {
+  position: fixed;
+  left: 50%;
+  bottom: calc(24px + env(safe-area-inset-bottom));
+  transform: translateX(-50%);
+  z-index: 20;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  max-width: calc(100vw - 32px);
+  padding: 10px 12px 10px 16px;
+  border-radius: 10px;
+  background: #2b2f36;
+  color: #fff;
+  font-size: 14px;
+  box-shadow: 0 4px 14px rgba(0,0,0,.25);
+}
+.toast-undo {
+  flex-shrink: 0;
+  border: none;
+  background: none;
+  color: #9db7ff;
+  font-size: 14px;
+  font-weight: 700;
+  cursor: pointer;
+  padding: 4px 6px;
+}
+.btn:disabled { opacity: .35; cursor: default; }
+
 /* ボタン・フォーム */
 .btn {
   display: inline-block;
@@ -289,7 +319,9 @@ dialog select { background: var(--surface); color: var(--text); }
   .people::-webkit-scrollbar { display: none; }
   .person-chip { padding: 2px 8px 2px 2px; font-size: 13px; gap: 4px; }
   .person-chip .avatar { width: 24px; height: 24px; font-size: 11px; }
-  #addPersonBtn { padding: 5px 8px; flex-shrink: 0; }
+  #addPersonBtn, #undoBtn { padding: 5px 8px; flex-shrink: 0; }
+  /* 右下のボタンと重ならないよう左に寄せる */
+  .toast { left: 12px; right: 84px; transform: none; max-width: none; justify-content: space-between; }
 
   main { padding: 0 0 88px; }
   #calendar { padding: 8px 4px; border-radius: 0; border-left: none; border-right: none; }

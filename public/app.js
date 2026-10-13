@@ -67,6 +67,70 @@ const addDays = (dateStr, n) => {
   return toDate(d);
 };
 
+// ---------- 元に戻す ----------
+// この端末でした変更を新しい順に覚えておき、逆の操作で戻す（再読み込みすると消える）
+const undoStack = [];
+const UNDO_MAX = 30;
+let undoBusy = false;
+let toastTimer;
+
+function showToast(text, withUndo) {
+  $('#toastText').textContent = text;
+  $('#toastUndo').hidden = !withUndo;
+  $('#toast').hidden = false;
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => { $('#toast').hidden = true; }, 6000);
+}
+
+function renderUndoBtn() {
+  const last = undoStack[undoStack.length - 1];
+  $('#undoBtn').disabled = !last;
+  $('#undoBtn').title = last ? `元に戻す：${last.label}（Ctrl+Z）` : '元に戻せる操作はありません';
+}
+
+// label: 「在室を移動しました」など。undo: 逆の操作
+function pushUndo(label, undo) {
+  undoStack.push({ label, undo });
+  if (undoStack.length > UNDO_MAX) undoStack.shift();
+  renderUndoBtn();
+  showToast(label, true);
+}
+
+async function undoLast() {
+  if (undoBusy || !undoStack.length) return;
+  undoBusy = true;
+  const { label, undo } = undoStack.pop();
+  try {
+    await undo();
+    showToast(`元に戻しました（${label.replace(/しました$/, '')}）`, false);
+  } catch (err) {
+    showToast(`元に戻せませんでした：${err.message}`, false);
+  } finally {
+    undoBusy = false;
+    renderUndoBtn();
+    await loadPeople();
+    calendar.refetchEvents();
+  }
+}
+
+$('#undoBtn').addEventListener('click', undoLast);
+$('#toastUndo').addEventListener('click', undoLast);
+document.addEventListener('keydown', (e) => {
+  if (!(e.ctrlKey || e.metaKey) || e.shiftKey || e.altKey || e.key.toLowerCase() !== 'z') return;
+  // 入力中の文字の取り消しやダイアログの操作はじゃましない
+  if (document.querySelector('dialog[open]') || e.target.closest('input, textarea, select, [contenteditable]')) return;
+  e.preventDefault();
+  undoLast();
+});
+
+// 変更前の在室・メモに書き戻す（相手が消されていたら知らせる）
+const putBack = (kind, row) => {
+  const { id, before, ...body } = row;
+  return api('PUT', `/api/${kind}/${id}`, body).catch((err) => {
+    throw err.message === 'not found' ? new Error('すでに削除されています') : err;
+  });
+};
+
 // ---------- 上部の人一覧 ----------
 function renderPeople() {
   const box = $('#people');
@@ -278,11 +342,13 @@ function initCalendar() {
             start = toLocalIso(ev.start);
             end = toLocalIso(ev.end || new Date(ev.start.getTime() + 60 * 60 * 1000));
           }
-          await api('PUT', `/api/memos/${memo.id}`, { start, end, all_day: ev.allDay });
+          const r = await api('PUT', `/api/memos/${memo.id}`, { start, end, all_day: ev.allDay });
+          pushUndo('メモを動かしました', () => putBack('memos', r.before));
         } else {
           // 在室は終日にしない
           if (ev.allDay || !ev.end) { info.revert(); return; }
-          await api('PUT', `/api/stays/${stay.id}`, { start: toLocalIso(ev.start), end: toLocalIso(ev.end) });
+          const r = await api('PUT', `/api/stays/${stay.id}`, { start: toLocalIso(ev.start), end: toLocalIso(ev.end) });
+          pushUndo(`${personById(r.person_id)?.name || ''}の在室を動かしました`, () => putBack('stays', r.before));
         }
         calendar.refetchEvents();
       } catch (err) {
@@ -457,20 +523,22 @@ $('#stayForm').addEventListener('submit', async (e) => {
   if (!editingStay && !selectedDates.size) { $('#stayError').textContent = '日付を選んでください'; return; }
   try {
     if (editingStay) {
-      await api('PUT', `/api/stays/${editingStay.id}`, {
+      const r = await api('PUT', `/api/stays/${editingStay.id}`, {
         person_id: pickedPerson,
         start: `${f.date.value}T${f.startTime.value}:00`,
         end: `${f.date.value}T${f.endTime.value}:00`,
         note: f.note.value.trim(),
       });
+      pushUndo(`${personById(r.before.person_id)?.name || ''}の在室を変更しました`, () => putBack('stays', r.before));
     } else {
-      await api('POST', '/api/stays/batch', {
+      const r = await api('POST', '/api/stays/batch', {
         person_id: pickedPerson,
         dates: [...selectedDates].sort(),
         startTime: f.startTime.value,
         endTime: f.endTime.value,
         note: f.note.value.trim(),
       });
+      pushUndo(`在室を${r.created}件追加しました`, () => api('POST', '/api/stays/remove', { ids: r.ids }));
     }
     $('#stayDialog').close();
     calendar.refetchEvents();
@@ -481,8 +549,9 @@ $('#stayForm').addEventListener('submit', async (e) => {
 
 $('#stayDelete').addEventListener('click', async () => {
   if (!editingStay || !confirm('この在室を削除しますか？')) return;
-  await api('DELETE', `/api/stays/${editingStay.id}`);
+  const deleted = await api('DELETE', `/api/stays/${editingStay.id}`);
   $('#stayDialog').close();
+  if (deleted) pushUndo('在室を削除しました', () => api('POST', '/api/stays/restore', { items: [deleted] }));
   calendar.refetchEvents();
 });
 
@@ -657,9 +726,11 @@ $('#memoForm').addEventListener('submit', async (e) => {
   }
   try {
     if (editingMemo) {
-      await api('PUT', `/api/memos/${editingMemo.id}`, { person_id, title, all_day: allDay, ...items[0] });
+      const r = await api('PUT', `/api/memos/${editingMemo.id}`, { person_id, title, all_day: allDay, ...items[0] });
+      pushUndo('メモを変更しました', () => putBack('memos', r.before));
     } else {
-      await api('POST', '/api/memos/batch', { person_id, title, all_day: allDay, items });
+      const r = await api('POST', '/api/memos/batch', { person_id, title, all_day: allDay, items });
+      pushUndo(`メモを${r.created}件追加しました`, () => api('POST', '/api/memos/remove', { ids: r.ids }));
     }
     $('#memoDialog').close();
     calendar.refetchEvents();
@@ -670,8 +741,9 @@ $('#memoForm').addEventListener('submit', async (e) => {
 
 $('#memoDelete').addEventListener('click', async () => {
   if (!editingMemo || !confirm('このメモを削除しますか？')) return;
-  await api('DELETE', `/api/memos/${editingMemo.id}`);
+  const deleted = await api('DELETE', `/api/memos/${editingMemo.id}`);
   $('#memoDialog').close();
+  if (deleted) pushUndo('メモを削除しました', () => api('POST', '/api/memos/restore', { items: [deleted] }));
   calendar.refetchEvents();
 });
 
@@ -784,8 +856,13 @@ $('#personForm').addEventListener('submit', async (e) => {
   }
   if (removeIcon) fd.append('removeIcon', '1');
   try {
-    if (editingPerson) await api('PUT', `/api/people/${editingPerson.id}`, fd);
-    else await api('POST', '/api/people', fd);
+    if (editingPerson) {
+      const r = await api('PUT', `/api/people/${editingPerson.id}`, fd);
+      pushUndo(`${r.before.name}を変更しました`, () => api('POST', '/api/people/restore', { person: r.before }));
+    } else {
+      const r = await api('POST', '/api/people', fd);
+      pushUndo(`${r.name}を追加しました`, () => api('DELETE', `/api/people/${r.id}`));
+    }
     $('#personDialog').close();
     await loadPeople();
     calendar.refetchEvents();
@@ -796,8 +873,9 @@ $('#personForm').addEventListener('submit', async (e) => {
 
 $('#personDelete').addEventListener('click', async () => {
   if (!editingPerson || !confirm(`${editingPerson.name} を削除しますか？\nこの人の在室記録とメモもすべて消えます。`)) return;
-  await api('DELETE', `/api/people/${editingPerson.id}`);
+  const deleted = await api('DELETE', `/api/people/${editingPerson.id}`);
   $('#personDialog').close();
+  pushUndo(`${deleted.person.name}を削除しました`, () => api('POST', '/api/people/restore', deleted));
   await loadPeople();
   calendar.refetchEvents();
 });
@@ -832,6 +910,7 @@ document.addEventListener('visibilitychange', async () => {
 });
 
 (async () => {
+  renderUndoBtn();
   initCalendar();
   await loadPeople();
   calendar.refetchEvents();

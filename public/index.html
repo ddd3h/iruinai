@@ -21,6 +21,7 @@
   <header class="topbar">
     <h1>在室カレンダー</h1>
     <div id="people" class="people"></div>
+    <button id="undoBtn" class="btn icon-btn" aria-label="元に戻す" disabled><svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 14L4 9l5-5"/><path d="M4 9h10.5a5.5 5.5 0 0 1 0 11H11"/></svg></button>
     <button id="addPersonBtn" class="btn icon-btn" title="人を追加" aria-label="人を追加"><svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="9" cy="9" r="4"/><path d="M2 21v-1a7 7 0 0 1 14 0v1"/><path d="M19 2v6M16 5h6"/></svg></button>
   </header>
 
@@ -30,6 +31,12 @@
 
   <button id="addMemoBtn" class="fab small" title="メモを追加" aria-label="メモを追加"><svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="5" y="3" width="14" height="18" rx="2"/><path d="M9 8h6M9 12h6M9 16h3"/></svg></button>
   <button id="addStayBtn" class="fab" title="在室を追加" aria-label="在室を追加"><svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg></button>
+
+  <!-- 変更の通知と「元に戻す」 -->
+  <div id="toast" class="toast" role="status" hidden>
+    <span id="toastText"></span>
+    <button type="button" id="toastUndo" class="toast-undo">元に戻す</button>
+  </div>
 
   <!-- 在室の追加・編集 -->
   <dialog id="stayDialog">
