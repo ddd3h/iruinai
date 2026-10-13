@@ -21,8 +21,10 @@
   <header class="topbar">
     <h1>在室カレンダー</h1>
     <div id="people" class="people"></div>
-    <button id="undoBtn" class="btn icon-btn" aria-label="元に戻す" disabled><svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 14L4 9l5-5"/><path d="M4 9h10.5a5.5 5.5 0 0 1 0 11H11"/></svg></button>
-    <button id="addPersonBtn" class="btn icon-btn" title="人を追加" aria-label="人を追加"><svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="9" cy="9" r="4"/><path d="M2 21v-1a7 7 0 0 1 14 0v1"/><path d="M19 2v6M16 5h6"/></svg></button>
+    <div class="top-actions">
+      <button id="undoBtn" class="top-btn ghost" aria-label="元に戻す" disabled><svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 14L4 9l5-5"/><path d="M4 9h10.5a5.5 5.5 0 0 1 0 11H11"/></svg></button>
+      <button id="addPersonBtn" class="top-btn primary" title="人を追加" aria-label="人を追加"><svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="9" cy="9" r="4"/><path d="M2 21v-1a7 7 0 0 1 14 0v1"/><path d="M19 2v6M16 5h6"/></svg><span class="label">追加</span></button>
+    </div>
   </header>
 
   <main>
