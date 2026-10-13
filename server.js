@@ -154,27 +154,86 @@ app.put('/api/people/:id', upload.single('icon'), (req, res) => {
   if (!p) return res.status(404).json({ error: 'not found' });
   const name = (req.body.name || '').trim() || p.name;
   const color = COLOR_RE.test(req.body.color) ? req.body.color : p.color;
+  // 古い画像は「元に戻す」で使うので消さない（使われなくなった画像は起動時に掃除する）
   let icon = p.icon_path;
-  if (req.file) {
-    removeIcon(p.icon_path);
-    icon = '/uploads/' + req.file.filename;
-  } else if (req.body.removeIcon === '1') {
-    removeIcon(p.icon_path);
-    icon = null;
-  }
+  if (req.file) icon = '/uploads/' + req.file.filename;
+  else if (req.body.removeIcon === '1') icon = null;
   db.prepare('UPDATE people SET name = ?, color = ?, icon_path = ? WHERE id = ?').run(name, color, icon, p.id);
-  res.json(db.prepare('SELECT * FROM people WHERE id = ?').get(p.id));
+  res.json({ ...db.prepare('SELECT * FROM people WHERE id = ?').get(p.id), before: p });
 });
 
+// 消した人・在室・メモをまとめて返す（「元に戻す」用）
 app.delete('/api/people/:id', (req, res) => {
   const p = db.prepare('SELECT * FROM people WHERE id = ?').get(req.params.id);
   if (!p) return res.status(404).json({ error: 'not found' });
+  const stays = db.prepare('SELECT * FROM stays WHERE person_id = ?').all(p.id);
+  const memos = db.prepare('SELECT * FROM memos WHERE person_id = ?').all(p.id);
   db.prepare('DELETE FROM people WHERE id = ?').run(p.id);
-  removeIcon(p.icon_path);
-  res.status(204).end();
+  res.json({ person: p, stays, memos });
+});
+
+// 「元に戻す」：人を同じ id で戻す（在室・メモも一緒に戻せる）
+app.post('/api/people/restore', (req, res) => {
+  const { person, stays = [], memos = [] } = req.body || {};
+  const name = typeof person?.name === 'string' ? person.name.trim() : '';
+  if (!Number.isInteger(person?.id) || !name || !COLOR_RE.test(person.color)
+    || !Array.isArray(stays) || !Array.isArray(memos)) {
+    return res.status(400).json({ error: '入力が不正です' });
+  }
+  // 画像は残っているときだけ使う
+  const file = person.icon_path && path.join(UPLOAD_DIR, path.basename(String(person.icon_path)));
+  const icon = file && fs.existsSync(file) ? '/uploads/' + path.basename(file) : null;
+  inTransaction(() => {
+    db.prepare(`INSERT INTO people (id, name, color, icon_path) VALUES (?, ?, ?, ?)
+      ON CONFLICT(id) DO UPDATE SET name = excluded.name, color = excluded.color, icon_path = excluded.icon_path`)
+      .run(person.id, name, person.color, icon);
+    restoreStays(stays);
+    restoreMemos(memos);
+  });
+  res.json(db.prepare('SELECT * FROM people WHERE id = ?').get(person.id));
 });
 
 // ---- stays ----
+function inTransaction(fn) {
+  db.exec('BEGIN');
+  try {
+    fn();
+    db.exec('COMMIT');
+  } catch (err) {
+    db.exec('ROLLBACK');
+    throw err;
+  }
+}
+
+// 「元に戻す」で消したもの・変えたものを同じ id で書き戻す
+function restoreStays(items) {
+  const upsert = db.prepare(`INSERT INTO stays (id, person_id, start, end, note) VALUES (?, ?, ?, ?, ?)
+    ON CONFLICT(id) DO UPDATE SET person_id = excluded.person_id, start = excluded.start, end = excluded.end, note = excluded.note`);
+  for (const s of items) {
+    if (!Number.isInteger(s?.id) || !validStay(s)) throw new Error('入力が不正です');
+    if (!db.prepare('SELECT 1 FROM people WHERE id = ?').get(s.person_id)) throw new Error('人が存在しません');
+    upsert.run(s.id, s.person_id, s.start, s.end, String(s.note || ''));
+  }
+}
+
+function restoreMemos(items) {
+  const upsert = db.prepare(`INSERT INTO memos (id, person_id, title, all_day, start, end) VALUES (?, ?, ?, ?, ?, ?)
+    ON CONFLICT(id) DO UPDATE SET person_id = excluded.person_id, title = excluded.title,
+      all_day = excluded.all_day, start = excluded.start, end = excluded.end`);
+  for (const m of items) {
+    const title = String(m?.title ?? '').trim();
+    const allDay = m?.all_day ? 1 : 0;
+    const personId = m?.person_id ?? null;
+    if (!Number.isInteger(m?.id) || !title || title.length > 100 || !validMemoRange(allDay, m.start, m.end)) throw new Error('入力が不正です');
+    if (!memoTargetOk(personId)) throw new Error('人が存在しません');
+    upsert.run(m.id, personId, title, allDay, m.start, m.end);
+  }
+}
+
+function validIds(ids) {
+  return Array.isArray(ids) && ids.length > 0 && ids.length <= 1000 && ids.every(Number.isInteger);
+}
+
 function validStay(b) {
   return b && Number.isInteger(Number(b.person_id)) && typeof b.start === 'string'
     && typeof b.end === 'string' && b.start < b.end;
@@ -208,15 +267,11 @@ app.post('/api/stays/batch', (req, res) => {
   }
   if (!db.prepare('SELECT 1 FROM people WHERE id = ?').get(person_id)) return res.status(400).json({ error: '人が存在しません' });
   const insert = db.prepare('INSERT INTO stays (person_id, start, end, note) VALUES (?, ?, ?, ?)');
-  db.exec('BEGIN');
-  try {
-    for (const d of new Set(dates)) insert.run(person_id, `${d}T${startTime}:00`, `${d}T${endTime}:00`, note || '');
-    db.exec('COMMIT');
-  } catch (err) {
-    db.exec('ROLLBACK');
-    throw err;
-  }
-  res.status(201).json({ created: new Set(dates).size });
+  const ids = [];
+  inTransaction(() => {
+    for (const d of new Set(dates)) ids.push(Number(insert.run(person_id, `${d}T${startTime}:00`, `${d}T${endTime}:00`, note || '').lastInsertRowid));
+  });
+  res.status(201).json({ created: ids.length, ids });
 });
 
 app.put('/api/stays/:id', (req, res) => {
@@ -227,11 +282,29 @@ app.put('/api/stays/:id', (req, res) => {
   if (!db.prepare('SELECT 1 FROM people WHERE id = ?').get(b.person_id)) return res.status(400).json({ error: '人が存在しません' });
   db.prepare('UPDATE stays SET person_id = ?, start = ?, end = ?, note = ? WHERE id = ?')
     .run(b.person_id, b.start, b.end, b.note || '', s.id);
-  res.json(db.prepare('SELECT * FROM stays WHERE id = ?').get(s.id));
+  res.json({ ...db.prepare('SELECT * FROM stays WHERE id = ?').get(s.id), before: s });
 });
 
+// 消したものを返す（「元に戻す」用）
 app.delete('/api/stays/:id', (req, res) => {
-  db.prepare('DELETE FROM stays WHERE id = ?').run(req.params.id);
+  const s = db.prepare('SELECT * FROM stays WHERE id = ?').get(req.params.id);
+  if (!s) return res.status(204).end();
+  db.prepare('DELETE FROM stays WHERE id = ?').run(s.id);
+  res.json(s);
+});
+
+app.post('/api/stays/remove', (req, res) => {
+  const { ids } = req.body || {};
+  if (!validIds(ids)) return res.status(400).json({ error: '入力が不正です' });
+  const del = db.prepare('DELETE FROM stays WHERE id = ?');
+  inTransaction(() => ids.forEach((id) => del.run(id)));
+  res.status(204).end();
+});
+
+app.post('/api/stays/restore', (req, res) => {
+  const { items } = req.body || {};
+  if (!Array.isArray(items) || !items.length || items.length > 1000) return res.status(400).json({ error: '入力が不正です' });
+  inTransaction(() => restoreStays(items));
   res.status(204).end();
 });
 
@@ -269,15 +342,11 @@ app.post('/api/memos/batch', (req, res) => {
   }
   if (!memoTargetOk(personId)) return res.status(400).json({ error: '人が存在しません' });
   const insert = db.prepare('INSERT INTO memos (person_id, title, all_day, start, end) VALUES (?, ?, ?, ?, ?)');
-  db.exec('BEGIN');
-  try {
-    for (const it of items) insert.run(personId, title, allDay, it.start, it.end);
-    db.exec('COMMIT');
-  } catch (err) {
-    db.exec('ROLLBACK');
-    throw err;
-  }
-  res.status(201).json({ created: items.length });
+  const ids = [];
+  inTransaction(() => {
+    for (const it of items) ids.push(Number(insert.run(personId, title, allDay, it.start, it.end).lastInsertRowid));
+  });
+  res.status(201).json({ created: ids.length, ids });
 });
 
 app.put('/api/memos/:id', (req, res) => {
@@ -292,11 +361,28 @@ app.put('/api/memos/:id', (req, res) => {
   if (!memoTargetOk(personId)) return res.status(400).json({ error: '人が存在しません' });
   db.prepare('UPDATE memos SET person_id = ?, title = ?, all_day = ?, start = ?, end = ? WHERE id = ?')
     .run(personId, title, allDay, b.start, b.end, m.id);
-  res.json(db.prepare('SELECT * FROM memos WHERE id = ?').get(m.id));
+  res.json({ ...db.prepare('SELECT * FROM memos WHERE id = ?').get(m.id), before: m });
 });
 
 app.delete('/api/memos/:id', (req, res) => {
-  db.prepare('DELETE FROM memos WHERE id = ?').run(req.params.id);
+  const m = db.prepare('SELECT * FROM memos WHERE id = ?').get(req.params.id);
+  if (!m) return res.status(204).end();
+  db.prepare('DELETE FROM memos WHERE id = ?').run(m.id);
+  res.json(m);
+});
+
+app.post('/api/memos/remove', (req, res) => {
+  const { ids } = req.body || {};
+  if (!validIds(ids)) return res.status(400).json({ error: '入力が不正です' });
+  const del = db.prepare('DELETE FROM memos WHERE id = ?');
+  inTransaction(() => ids.forEach((id) => del.run(id)));
+  res.status(204).end();
+});
+
+app.post('/api/memos/restore', (req, res) => {
+  const { items } = req.body || {};
+  if (!Array.isArray(items) || !items.length || items.length > 1000) return res.status(400).json({ error: '入力が不正です' });
+  inTransaction(() => restoreMemos(items));
   res.status(204).end();
 });
 
@@ -336,9 +422,24 @@ async function shrinkExistingIcons() {
   console.log(done ? `アイコンを縮小: ${done}件` : 'アイコンの縮小: 対象なし');
 }
 
+// ---- 起動時: どの人にも使われていない画像を消す ----
+// 編集・削除した人の古い画像は「元に戻す」のために残しているので、ここでまとめて片付ける
+function removeUnusedIcons() {
+  const used = new Set(db.prepare('SELECT icon_path FROM people WHERE icon_path IS NOT NULL').all()
+    .map((p) => path.basename(p.icon_path)));
+  let n = 0;
+  for (const name of fs.readdirSync(UPLOAD_DIR)) {
+    if (used.has(name)) continue;
+    fs.rmSync(path.join(UPLOAD_DIR, name), { force: true });
+    n++;
+  }
+  if (n) console.log(`使われていない画像を削除: ${n}件`);
+}
+
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, '0.0.0.0', () => {
   console.log(`在室カレンダー: http://localhost:${PORT}`);
   console.log(PASSWORD ? '合言葉: 有効' : '合言葉: 無効（ROOM_PASSWORD 未設定）');
+  removeUnusedIcons();
   shrinkExistingIcons().catch((err) => console.log('アイコンの縮小に失敗:', err.message));
 });
