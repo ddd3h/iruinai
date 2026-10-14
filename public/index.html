@@ -23,6 +23,7 @@
     <div id="people" class="people"></div>
     <div class="top-actions">
       <button id="undoBtn" class="top-btn ghost" aria-label="元に戻す" disabled><svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 14L4 9l5-5"/><path d="M4 9h10.5a5.5 5.5 0 0 1 0 11H11"/></svg></button>
+      <button id="exportBtn" class="top-btn ghost" title="CSVを出力" aria-label="CSVを出力"><svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3v12"/><path d="M7 10l5 5 5-5"/><path d="M4 20h16"/></svg></button>
       <button id="addPersonBtn" class="top-btn primary" title="人を追加" aria-label="人を追加"><svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="9" cy="9" r="4"/><path d="M2 21v-1a7 7 0 0 1 14 0v1"/><path d="M19 2v6M16 5h6"/></svg><span class="label">追加</span></button>
     </div>
   </header>
@@ -128,6 +129,39 @@
         <span class="spacer"></span>
         <button type="button" class="btn" data-close>キャンセル</button>
         <button type="submit" class="btn primary">保存</button>
+      </div>
+    </form>
+  </dialog>
+
+  <!-- CSV出力（Googleカレンダー形式） -->
+  <dialog id="exportDialog">
+    <form id="exportForm" method="dialog">
+      <h2>CSVを出力</h2>
+      <div class="row">
+        <label>開始日<input type="date" name="from" required></label>
+        <label>終了日<input type="date" name="to" required></label>
+      </div>
+      <label>だれ</label>
+      <div id="exportPeople" class="export-people"></div>
+      <label>タイトル<input type="text" name="subject" required maxlength="100" placeholder="例：在室"></label>
+      <label class="check"><input type="checkbox" name="withName"> タイトルに名前を付ける</label>
+      <label>場所<input type="text" name="location" maxlength="100" placeholder="任意"></label>
+      <label>説明<input type="text" name="description" maxlength="200" placeholder="任意"></label>
+      <div class="export-head">
+        <label>在室予定 <span id="exportStayCount" class="count"></span></label>
+        <span><button type="button" class="btn link" data-all="stay">全選択</button><button type="button" class="btn link" data-none="stay">全解除</button></span>
+      </div>
+      <div id="exportStays" class="export-list"></div>
+      <div class="export-head">
+        <label>メモ（チェックしたものだけ出力） <span id="exportMemoCount" class="count"></span></label>
+        <span><button type="button" class="btn link" data-all="memo">全選択</button><button type="button" class="btn link" data-none="memo">全解除</button></span>
+      </div>
+      <div id="exportMemos" class="export-list"></div>
+      <p class="error" id="exportError"></p>
+      <div class="actions">
+        <span class="spacer"></span>
+        <button type="button" class="btn" data-close>キャンセル</button>
+        <button type="submit" class="btn primary">CSVを出力</button>
       </div>
     </form>
   </dialog>

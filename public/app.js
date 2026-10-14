@@ -889,6 +889,137 @@ function defaultDay() {
   return now >= view.currentStart && now < view.currentEnd ? now : view.currentStart;
 }
 
+// ---------- CSV出力（Googleカレンダー形式） ----------
+const exportState = { stays: [], memos: [] };
+
+function openExportDialog() {
+  const f = $('#exportForm');
+  const view = calendar.view;
+  f.from.value = toDate(view.currentStart);
+  f.to.value = addDays(toDate(view.currentEnd), -1);
+  const box = $('#exportPeople');
+  box.innerHTML = '';
+  people.forEach((p) => {
+    const l = document.createElement('label');
+    l.className = 'check';
+    const c = document.createElement('input');
+    c.type = 'checkbox'; c.value = p.id; c.checked = true;
+    l.append(c, document.createTextNode(' ' + p.name));
+    box.append(l);
+  });
+  $('#exportError').textContent = '';
+  $('#exportDialog').showModal();
+  refreshExportLists();
+}
+
+const exportPersonIds = () =>
+  [...document.querySelectorAll('#exportPeople input:checked')].map((c) => Number(c.value));
+
+const fmtDate = (s) => `${s.slice(5, 7)}/${s.slice(8, 10)}/${s.slice(0, 4)}`;
+function fmtTime(s) {
+  const h = Number(s.slice(11, 13));
+  return `${pad(h % 12 || 12)}:${s.slice(14, 16)} ${h < 12 ? 'AM' : 'PM'}`;
+}
+const csvCell = (v) => {
+  v = String(v ?? '');
+  return /[",\r\n]/.test(v) ? `"${v.replace(/"/g, '""')}"` : v;
+};
+const hhmm = (s) => (s.length > 10 ? s.slice(11, 16) : '');
+
+function exportRow(listEl, label, id) {
+  const l = document.createElement('label');
+  l.className = 'check';
+  const c = document.createElement('input');
+  c.type = 'checkbox'; c.value = id; c.checked = listEl.id === 'exportStays';
+  l.append(c, document.createTextNode(' ' + label));
+  return l;
+}
+
+async function refreshExportLists() {
+  const f = $('#exportForm');
+  const stayBox = $('#exportStays'), memoBox = $('#exportMemos');
+  stayBox.innerHTML = memoBox.innerHTML = '';
+  if (!f.from.value || !f.to.value || f.from.value > f.to.value) {
+    exportState.stays = []; exportState.memos = [];
+    updateExportCounts();
+    return;
+  }
+  const q = `?start=${f.from.value}T00:00:00&end=${addDays(f.to.value, 1)}T00:00:00`;
+  const ids = new Set(exportPersonIds());
+  const [stays, memos] = await Promise.all([api('GET', '/api/stays' + q), api('GET', '/api/memos' + q)]);
+  exportState.stays = stays.filter((s) => ids.has(s.person_id));
+  exportState.memos = memos.filter((m) => m.person_id == null ? ids.size > 0 : ids.has(m.person_id));
+  exportState.stays.forEach((s, i) => {
+    const name = personById(s.person_id)?.name || '';
+    stayBox.append(exportRow(stayBox, `${s.start.slice(5, 10)} ${hhmm(s.start)}-${hhmm(s.end)} ${name}`, i));
+  });
+  exportState.memos.forEach((m, i) => {
+    const who = m.person_id == null ? '部屋' : (personById(m.person_id)?.name || '');
+    memoBox.append(exportRow(memoBox, `${m.start.slice(5, 10)} ${m.title}（${who}）`, i));
+  });
+  for (const [box, msg] of [[stayBox, '該当する在室予定はありません'], [memoBox, '該当するメモはありません']]) {
+    if (!box.children.length) box.innerHTML = `<p class="hint">${msg}</p>`;
+  }
+  updateExportCounts();
+}
+
+function updateExportCounts() {
+  $('#exportStayCount').textContent = `${document.querySelectorAll('#exportStays input:checked').length}件`;
+  $('#exportMemoCount').textContent = `${document.querySelectorAll('#exportMemos input:checked').length}件`;
+}
+
+function buildCsv(f) {
+  const subject = f.subject.value.trim();
+  const rows = [['Subject', 'Start Date', 'Start Time', 'End Date', 'End Time', 'All Day Event', 'Description', 'Location', 'Private']];
+  const picked = (sel) => [...document.querySelectorAll(sel + ' input:checked')].map((c) => Number(c.value));
+  for (const i of picked('#exportStays')) {
+    const s = exportState.stays[i];
+    const name = personById(s.person_id)?.name;
+    rows.push([f.withName.checked && name ? `${subject} - ${name}` : subject,
+      fmtDate(s.start), fmtTime(s.start), fmtDate(s.end), fmtTime(s.end),
+      'False', f.description.value.trim(), f.location.value.trim(), 'False']);
+  }
+  for (const i of picked('#exportMemos')) {
+    const m = exportState.memos[i];
+    if (m.all_day) {
+      rows.push([m.title, fmtDate(m.start), '', fmtDate(addDays(m.end, -1)), '', 'True', '', '', 'False']);
+    } else {
+      rows.push([m.title, fmtDate(m.start), fmtTime(m.start), fmtDate(m.end), fmtTime(m.end), 'False', '', '', 'False']);
+    }
+  }
+  return { count: rows.length - 1, text: rows.map((r) => r.map(csvCell).join(',')).join('\r\n') };
+}
+
+$('#exportBtn').addEventListener('click', openExportDialog);
+$('#exportForm').addEventListener('change', (e) => {
+  if (e.target.name === 'from' || e.target.name === 'to' || e.target.closest('#exportPeople')) {
+    refreshExportLists().catch((err) => { $('#exportError').textContent = err.message; });
+  } else updateExportCounts();
+});
+$('#exportForm').addEventListener('click', (e) => {
+  const kind = e.target.dataset?.all || e.target.dataset?.none;
+  if (!kind) return;
+  document.querySelectorAll(kind === 'stay' ? '#exportStays input' : '#exportMemos input')
+    .forEach((c) => { c.checked = 'all' in e.target.dataset; });
+  updateExportCounts();
+});
+$('#exportForm').addEventListener('submit', (e) => {
+  e.preventDefault();
+  const f = e.target;
+  const { count, text } = buildCsv(f);
+  if (!count) { $('#exportError').textContent = '出力する予定がありません'; return; }
+  const url = URL.createObjectURL(new Blob(['﻿' + text], { type: 'text/csv;charset=utf-8' }));
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `zaishitsu_${f.from.value.replace(/-/g, '')}-${f.to.value.replace(/-/g, '')}.csv`;
+  document.body.append(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
+  $('#exportDialog').close();
+  showToast(`${count}件をCSVに出力しました`, false);
+});
+
 $('#addMemoBtn').addEventListener('click', () => openMemoDialog(null));
 
 // ＋ボタン：表示中の日に 9:00-18:00 で追加
