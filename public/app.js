@@ -123,6 +123,33 @@ document.addEventListener('keydown', (e) => {
   undoLast();
 });
 
+// ---------- 印刷 ----------
+// 画面用に固定した高さを外し、紙の大きさに合わせて描き直す
+function preparePrint() {
+  $('#printTitle').textContent = calendar.view.title;
+  calendar.setOption('height', 'auto');
+  calendar.setOption('dayMaxEvents', false);
+  calendar.updateSize();
+}
+function restoreAfterPrint() {
+  applyHeight(calendar.view.type);
+  calendar.updateSize();
+}
+function printCalendar() {
+  preparePrint();
+  window.print();
+}
+window.addEventListener('beforeprint', preparePrint);
+window.addEventListener('afterprint', restoreAfterPrint);
+$('#printBtn').addEventListener('click', printCalendar);
+document.addEventListener('keydown', (e) => {
+  if (!(e.ctrlKey || e.metaKey) || e.shiftKey || e.altKey || e.key.toLowerCase() !== 'p') return;
+  // ダイアログを開いている間はブラウザ標準の印刷に任せる
+  if (document.querySelector('dialog[open]')) return;
+  e.preventDefault();
+  printCalendar();
+});
+
 // 変更前の在室・メモに書き戻す（相手が消されていたら知らせる）
 const putBack = (kind, row) => {
   const { id, before, ...body } = row;
