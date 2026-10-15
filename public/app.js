@@ -935,8 +935,11 @@ function openExportDialog() {
     box.append(l);
   });
   $('#exportError').textContent = '';
+  exportState.stays = []; exportState.memos = [];
+  $('#exportStays').replaceChildren();
+  $('#exportMemos').replaceChildren();
   $('#exportDialog').showModal();
-  refreshExportLists();
+  refreshExportLists().catch((err) => { $('#exportError').textContent = err.message; });
 }
 
 const exportPersonIds = () =>
@@ -953,40 +956,79 @@ const csvCell = (v) => {
 };
 const hhmm = (s) => (s.length > 10 ? s.slice(11, 16) : '');
 
-function exportRow(listEl, label, id) {
+// kind: 'stay' | 'memo'。person は person_id（部屋のメモは ROOM）
+function exportRow(kind, label, index, person, checked) {
   const l = document.createElement('label');
   l.className = 'check';
+  l.dataset.person = person;
   const c = document.createElement('input');
-  c.type = 'checkbox'; c.value = id; c.checked = listEl.id === 'exportStays';
+  c.type = 'checkbox'; c.value = index; c.checked = checked;
   l.append(c, document.createTextNode(' ' + label));
   return l;
 }
 
+const exportKey = (kind, row) => `${kind}${row.id}`;
+let exportReq = 0;
+
+// 期間が変わったときだけ取得し直す。人の絞り込みは applyExportPeople が表示の切り替えだけで行う
 async function refreshExportLists() {
   const f = $('#exportForm');
-  const stayBox = $('#exportStays'), memoBox = $('#exportMemos');
-  stayBox.innerHTML = memoBox.innerHTML = '';
-  if (!f.from.value || !f.to.value || f.from.value > f.to.value) {
-    exportState.stays = []; exportState.memos = [];
-    updateExportCounts();
-    return;
-  }
+  if (!f.from.value || !f.to.value || f.from.value > f.to.value) return;
+  const req = ++exportReq;
   const q = `?start=${f.from.value}T00:00:00&end=${addDays(f.to.value, 1)}T00:00:00`;
-  const ids = new Set(exportPersonIds());
   const [stays, memos] = await Promise.all([api('GET', '/api/stays' + q), api('GET', '/api/memos' + q)]);
-  exportState.stays = stays.filter((s) => ids.has(s.person_id));
-  exportState.memos = memos.filter((m) => m.person_id == null ? ids.size > 0 : ids.has(m.person_id));
-  exportState.stays.forEach((s, i) => {
-    const name = personById(s.person_id)?.name || '';
-    stayBox.append(exportRow(stayBox, `${s.start.slice(5, 10)} ${hhmm(s.start)}-${hhmm(s.end)} ${name}`, i));
+  if (req !== exportReq) return; // もっと新しい取得が走っている
+
+  // 同じ予定・メモなら、チェックの状態を引き継ぐ
+  const prev = new Map();
+  document.querySelectorAll('#exportStays input, #exportMemos input').forEach((c) => {
+    const row = (c.closest('#exportStays') ? exportState.stays : exportState.memos)[Number(c.value)];
+    if (row) prev.set(exportKey(c.closest('#exportStays') ? 'stay' : 'memo', row), c.dataset.prev ?? String(c.checked));
   });
-  exportState.memos.forEach((m, i) => {
+  exportState.stays = stays;
+  exportState.memos = memos;
+  const stayRows = stays.map((st, i) => {
+    const name = personById(st.person_id)?.name || '';
+    const want = prev.get(exportKey('stay', st));
+    return exportRow('stay', `${st.start.slice(5, 10)} ${hhmm(st.start)}-${hhmm(st.end)} ${name}`, i, st.person_id, want == null ? true : want === 'true');
+  });
+  const memoRows = memos.map((m, i) => {
     const who = m.person_id == null ? '部屋' : (personById(m.person_id)?.name || '');
-    memoBox.append(exportRow(memoBox, `${m.start.slice(5, 10)} ${m.title}（${who}）`, i));
+    const want = prev.get(exportKey('memo', m));
+    return exportRow('memo', `${m.start.slice(5, 10)} ${m.title}（${who}）`, i, m.person_id ?? ROOM, want == null ? false : want === 'true');
   });
-  for (const [box, msg] of [[stayBox, '該当する在室予定はありません'], [memoBox, '該当するメモはありません']]) {
-    if (!box.children.length) box.innerHTML = `<p class="hint">${msg}</p>`;
-  }
+  const empty = (msg) => {
+    const p = document.createElement('p');
+    p.className = 'hint empty';
+    p.textContent = msg;
+    return p;
+  };
+  $('#exportStays').replaceChildren(...stayRows, empty('該当する在室予定はありません'));
+  $('#exportMemos').replaceChildren(...memoRows, empty('該当するメモはありません'));
+  applyExportPeople();
+}
+
+// 選ばれていない人の行は隠してチェックも外す。戻したときは外す前の状態に戻す
+function applyExportPeople() {
+  const ids = new Set(exportPersonIds().map(String));
+  document.querySelectorAll('#exportStays, #exportMemos').forEach((box) => {
+    let shown = 0;
+    box.querySelectorAll('label').forEach((l) => {
+      const c = l.querySelector('input');
+      const show = l.dataset.person === String(ROOM) ? ids.size > 0 : ids.has(l.dataset.person);
+      if (show && l.hidden) {
+        c.checked = c.dataset.prev === 'true';
+        delete c.dataset.prev;
+      } else if (!show && !l.hidden) {
+        c.dataset.prev = String(c.checked);
+        c.checked = false;
+      }
+      l.hidden = !show;
+      if (show) shown++;
+    });
+    const empty = box.querySelector('.empty');
+    if (empty) empty.hidden = shown > 0;
+  });
   updateExportCounts();
 }
 
@@ -1019,14 +1061,15 @@ function buildCsv(f) {
 
 $('#exportBtn').addEventListener('click', openExportDialog);
 $('#exportForm').addEventListener('change', (e) => {
-  if (e.target.name === 'from' || e.target.name === 'to' || e.target.closest('#exportPeople')) {
+  if (e.target.name === 'from' || e.target.name === 'to') {
     refreshExportLists().catch((err) => { $('#exportError').textContent = err.message; });
-  } else updateExportCounts();
+  } else if (e.target.closest('#exportPeople')) applyExportPeople();
+  else updateExportCounts();
 });
 $('#exportForm').addEventListener('click', (e) => {
   const kind = e.target.dataset?.all || e.target.dataset?.none;
   if (!kind) return;
-  document.querySelectorAll(kind === 'stay' ? '#exportStays input' : '#exportMemos input')
+  document.querySelectorAll(`${kind === 'stay' ? '#exportStays' : '#exportMemos'} label:not([hidden]) input`)
     .forEach((c) => { c.checked = 'all' in e.target.dataset; });
   updateExportCounts();
 });

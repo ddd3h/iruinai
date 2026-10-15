@@ -400,7 +400,7 @@ dialog select { background: var(--surface); color: var(--text); }
 dialog .export-people label.check, dialog .export-list label.check { margin: 4px 0; }
 .export-head { display: flex; align-items: center; justify-content: space-between; margin-top: 8px; }
 .export-head .btn.link { margin-left: 10px; font-size: 12px; }
-.export-list { max-height: 160px; overflow-y: auto; border: 1px solid var(--border, #ddd); border-radius: 8px; padding: 4px 10px; }
+.export-list { height: 128px; overflow-y: auto; border: 1px solid var(--border, #ddd); border-radius: 8px; padding: 4px 10px; }
 .export-list .hint { padding: 6px 0; }
 .export-list label.check { font-size: 13px; }
 .export-head > span { white-space: nowrap; }
