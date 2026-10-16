@@ -152,6 +152,38 @@ document.addEventListener('keydown', (e) => {
   printCalendar();
 });
 
+// ---------- ロック中の閲覧 ----------
+const fmtViewDay = (iso) => {
+  const d = new Date(iso.length > 10 ? iso : iso + 'T00:00:00');
+  return `${d.getMonth() + 1}月${d.getDate()}日（${WEEKDAYS[d.getDay()]}）`;
+};
+
+function viewWhen(start, end, allDay) {
+  if (allDay) {
+    const last = addDays(end, -1); // 終日の終了日は翌日の0時で持っている
+    return last > start ? `${fmtViewDay(start)} 〜 ${fmtViewDay(last)}（終日）` : `${fmtViewDay(start)}（終日）`;
+  }
+  const sd = start.slice(0, 10);
+  const ed = end.slice(0, 10);
+  return sd === ed
+    ? `${fmtViewDay(start)} ${start.slice(11, 16)} 〜 ${end.slice(11, 16)}`
+    : `${fmtViewDay(start)} ${start.slice(11, 16)} 〜 ${fmtViewDay(end)} ${end.slice(11, 16)}`;
+}
+
+function openViewDialog(kind, item) {
+  const isMemo = kind === 'memo';
+  const person = item.person_id == null ? null : personById(item.person_id);
+  $('#viewKind').textContent = isMemo ? 'メモ' : '在室';
+  $('#viewTitle').textContent = isMemo ? item.title : `${person?.name || ''}の在室`;
+  const who = $('#viewWho');
+  who.replaceChildren(person ? avatar(person) : roomAvatar(), document.createTextNode(person ? person.name : '部屋'));
+  $('#viewWhen').textContent = viewWhen(item.start, item.end, isMemo && !!item.all_day);
+  const note = isMemo ? '' : (item.note || '');
+  $('#viewNoteRow').hidden = !note;
+  $('#viewNote').textContent = note;
+  $('#viewDialog').showModal();
+}
+
 // ---------- ロック ----------
 // ロック中は表示・CSV出力・印刷だけ使える。解除して5分操作がなければ自動でロックに戻す
 const AUTO_LOCK_MS = 5 * 60 * 1000;
@@ -415,8 +447,8 @@ function initCalendar() {
       openStayDialog(null, start, end, dates);
     },
     eventClick: (info) => {
-      if (!requireUnlocked()) return;
       const { kind, stay, memo } = info.event.extendedProps;
+      if (locked) return openViewDialog(kind, stay || memo); // ロック中は内容を見るだけ
       if (kind === 'memo') return openMemoDialog(memo);
       openStayDialog(stay, new Date(stay.start), new Date(stay.end));
     },

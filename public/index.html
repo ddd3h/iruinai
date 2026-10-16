@@ -49,6 +49,24 @@
     <button type="button" id="toastUndo" class="toast-undo">元に戻す</button>
   </div>
 
+  <!-- ロック中の予定・メモの閲覧（編集はできない） -->
+  <dialog id="viewDialog">
+    <div class="view">
+      <p class="view-kind" id="viewKind"></p>
+      <h2 id="viewTitle"></h2>
+      <div class="view-who" id="viewWho"></div>
+      <dl class="view-list">
+        <dt>日時</dt><dd id="viewWhen"></dd>
+        <div id="viewNoteRow"><dt id="viewNoteLabel">メモ</dt><dd id="viewNote"></dd></div>
+      </dl>
+      <p class="hint">編集するには、ヘッダーの鍵のボタンでロックを解除してください</p>
+      <div class="actions">
+        <span class="spacer"></span>
+        <button type="button" class="btn primary" data-close>閉じる</button>
+      </div>
+    </div>
+  </dialog>
+
   <!-- 在室の追加・編集 -->
   <dialog id="stayDialog">
     <form id="stayForm" method="dialog">

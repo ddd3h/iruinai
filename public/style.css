@@ -471,3 +471,12 @@ dialog .export-people label.check, dialog .export-list label.check { margin: 4px
   .fc .fc-timegrid-slot-label-frame, .fc .fc-timegrid-slot-label-cushion { line-height: 8px; font-size: 8px; }
   main, #calendar { box-shadow: none; border: none; padding: 0; margin: 0; }
 }
+
+/* ロック中の閲覧ダイアログ */
+.view-kind { margin: 0 0 4px; font-size: 12px; color: var(--muted); }
+.view h2 { margin: 0 0 10px; font-size: 18px; word-break: break-word; }
+.view-who { display: flex; align-items: center; gap: 8px; margin-bottom: 12px; font-weight: 600; }
+.view-who .avatar { width: 32px; height: 32px; font-size: 14px; }
+.view-list { margin: 0 0 8px; }
+.view-list dt { font-size: 12px; color: var(--muted); margin-top: 10px; }
+.view-list dd { margin: 2px 0 0; font-size: 15px; white-space: pre-wrap; word-break: break-word; }
