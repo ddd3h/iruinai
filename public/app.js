@@ -1,6 +1,7 @@
 let people = [];
 const ROOM = 'room'; // 部屋のメモを表すキー
 const hidden = new Set(); // 非表示中の person_id（部屋は ROOM）
+let locked = true; // 誤操作を防ぐため、ページを開いたときは必ずロックから始める
 let calendar;
 
 const $ = (sel) => document.querySelector(sel);
@@ -84,7 +85,7 @@ function showToast(text, withUndo) {
 
 function renderUndoBtn() {
   const last = undoStack[undoStack.length - 1];
-  $('#undoBtn').disabled = !last;
+  $('#undoBtn').disabled = locked || !last;
   $('#undoBtn').title = last ? `元に戻す：${last.label}（Ctrl+Z）` : '元に戻せる操作はありません';
 }
 
@@ -97,6 +98,7 @@ function pushUndo(label, undo) {
 }
 
 async function undoLast() {
+  if (!requireUnlocked()) return;
   if (undoBusy || !undoStack.length) return;
   undoBusy = true;
   const { label, undo } = undoStack.pop();
@@ -150,6 +152,67 @@ document.addEventListener('keydown', (e) => {
   printCalendar();
 });
 
+// ---------- ロック ----------
+// ロック中は表示・CSV出力・印刷だけ使える。解除して5分操作がなければ自動でロックに戻す
+const AUTO_LOCK_MS = 5 * 60 * 1000;
+let lockTimer;
+
+function requireUnlocked() {
+  if (!locked) return true;
+  showToast('ロック中です。鍵のボタンを押すと編集できます', false);
+  return false;
+}
+
+function armAutoLock() {
+  clearTimeout(lockTimer);
+  if (!locked) lockTimer = setTimeout(autoLock, AUTO_LOCK_MS);
+}
+
+function autoLock() {
+  // 入力の途中で消えてしまわないよう、ダイアログを閉じるまで待つ
+  if (document.querySelector('dialog[open]')) { lockTimer = setTimeout(autoLock, 60 * 1000); return; }
+  setLocked(true);
+  showToast('操作がなかったので、自動でロックしました', false);
+}
+
+function setLocked(v) {
+  locked = v;
+  document.body.classList.toggle('locked', v);
+  if (calendar) {
+    calendar.setOption('editable', !v);
+    calendar.setOption('selectable', !v);
+  }
+  const label = v ? 'ロック中（押すと編集できます）' : '編集できます（押すとロックします）';
+  const btn = $('#lockBtn');
+  btn.setAttribute('aria-pressed', String(!v));
+  btn.title = label;
+  btn.setAttribute('aria-label', label);
+  $('#importBtn').disabled = v;
+  $('#addPersonBtn').disabled = v;
+  renderUndoBtn();
+  armAutoLock();
+}
+
+$('#lockBtn').addEventListener('click', () => {
+  setLocked(!locked);
+  showToast(locked ? 'ロックしました' : 'ロックを解除しました（5分操作がないと自動でロックします）', false);
+});
+['pointerdown', 'keydown', 'wheel'].forEach((t) =>
+  document.addEventListener(t, armAutoLock, { capture: true, passive: true }));
+
+// スマホ：ヘッダーの機能は「…」メニューに格納
+function setMenu(open) {
+  $('#actionMenu').classList.toggle('open', open);
+  $('#menuBtn').setAttribute('aria-expanded', String(open));
+}
+$('#menuBtn').addEventListener('click', (e) => {
+  e.stopPropagation();
+  setMenu(!$('#actionMenu').classList.contains('open'));
+});
+$('#actionMenu').addEventListener('click', () => setMenu(false));
+document.addEventListener('click', (e) => { if (!e.target.closest('.top-actions')) setMenu(false); });
+document.addEventListener('keydown', (e) => { if (e.key === 'Escape') setMenu(false); });
+
 // 変更前の在室・メモに書き戻す（相手が消されていたら知らせる）
 const putBack = (kind, row) => {
   const { id, before, ...body } = row;
@@ -183,7 +246,7 @@ function renderPeople() {
     edit.className = 'edit';
     edit.append(icon('pencil'));
     edit.title = '編集';
-    edit.onclick = (e) => { e.stopPropagation(); openPersonDialog(p); };
+    edit.onclick = (e) => { e.stopPropagation(); if (requireUnlocked()) openPersonDialog(p); };
     chip.append(edit);
     chip.onclick = () => {
       hidden.has(p.id) ? hidden.delete(p.id) : hidden.add(p.id);
@@ -220,8 +283,8 @@ function initCalendar() {
     displayEventEnd: true,
     eventTimeFormat: { hour: '2-digit', minute: '2-digit', hour12: false },
     slotEventOverlap: false, // 重ねずに横並び
-    selectable: true,
-    editable: true,
+    selectable: !locked,
+    editable: !locked,
     selectLongPressDelay: 300,
     eventLongPressDelay: 400,
     // 日付は数字だけ（「日」を付けない）
@@ -333,6 +396,7 @@ function initCalendar() {
     },
     select: (info) => {
       calendar.unselect();
+      if (!requireUnlocked()) return;
       let start = info.start;
       let end = info.end;
       const dates = [];
@@ -351,6 +415,7 @@ function initCalendar() {
       openStayDialog(null, start, end, dates);
     },
     eventClick: (info) => {
+      if (!requireUnlocked()) return;
       const { kind, stay, memo } = info.event.extendedProps;
       if (kind === 'memo') return openMemoDialog(memo);
       openStayDialog(stay, new Date(stay.start), new Date(stay.end));
@@ -907,7 +972,7 @@ $('#personDelete').addEventListener('click', async () => {
   calendar.refetchEvents();
 });
 
-$('#addPersonBtn').addEventListener('click', () => openPersonDialog(null));
+$('#addPersonBtn').addEventListener('click', () => { if (requireUnlocked()) openPersonDialog(null); });
 
 // 表示中の日（今日が範囲内なら今日）
 function defaultDay() {
@@ -1067,7 +1132,7 @@ async function readImportFile(file) {
   catch { return new TextDecoder('shift_jis').decode(buf); }
 }
 
-$('#importBtn').addEventListener('click', () => $('#importFile').click());
+$('#importBtn').addEventListener('click', () => { if (requireUnlocked()) $('#importFile').click(); });
 $('#importFile').addEventListener('change', async (e) => {
   const file = e.target.files[0];
   e.target.value = ''; // 同じファイルをもう一度選べるように
@@ -1281,10 +1346,11 @@ $('#exportForm').addEventListener('submit', (e) => {
   showToast(`${count}件をCSVに出力しました`, false);
 });
 
-$('#addMemoBtn').addEventListener('click', () => openMemoDialog(null));
+$('#addMemoBtn').addEventListener('click', () => { if (requireUnlocked()) openMemoDialog(null); });
 
 // ＋ボタン：表示中の日に 9:00-18:00 で追加
 $('#addStayBtn').addEventListener('click', () => {
+  if (!requireUnlocked()) return;
   const day = defaultDay();
   const start = new Date(day); start.setHours(9, 0, 0, 0);
   const end = new Date(day); end.setHours(18, 0, 0, 0);
@@ -1302,8 +1368,8 @@ document.addEventListener('visibilitychange', async () => {
 });
 
 (async () => {
-  renderUndoBtn();
   initCalendar();
+  setLocked(true);
   await loadPeople();
   calendar.refetchEvents();
 })();
