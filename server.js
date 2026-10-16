@@ -274,6 +274,29 @@ app.post('/api/stays/batch', (req, res) => {
   res.status(201).json({ created: ids.length, ids });
 });
 
+// CSV取り込み：1人分の在室をまとめて登録（同じ人・開始・終了がすでにあれば飛ばす）
+app.post('/api/stays/import', (req, res) => {
+  const { person_id, items } = req.body || {};
+  const STAMP_RE = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}$/;
+  if (!Array.isArray(items) || !items.length || items.length > 1000
+    || !items.every((it) => it && STAMP_RE.test(it.start) && STAMP_RE.test(it.end) && it.start < it.end
+      && it.start.slice(0, 10) === it.end.slice(0, 10))) {
+    return res.status(400).json({ error: '入力が不正です' });
+  }
+  if (!db.prepare('SELECT 1 FROM people WHERE id = ?').get(person_id)) return res.status(400).json({ error: '人が存在しません' });
+  const exists = db.prepare('SELECT 1 FROM stays WHERE person_id = ? AND start = ? AND end = ?');
+  const insert = db.prepare('INSERT INTO stays (person_id, start, end, note) VALUES (?, ?, ?, ?)');
+  const ids = [];
+  let skipped = 0;
+  inTransaction(() => {
+    for (const it of items) {
+      if (exists.get(person_id, it.start, it.end)) { skipped++; continue; }
+      ids.push(Number(insert.run(person_id, it.start, it.end, String(it.note || '').slice(0, 100)).lastInsertRowid));
+    }
+  });
+  res.status(201).json({ created: ids.length, ids, skipped });
+});
+
 app.put('/api/stays/:id', (req, res) => {
   const s = db.prepare('SELECT * FROM stays WHERE id = ?').get(req.params.id);
   if (!s) return res.status(404).json({ error: 'not found' });
