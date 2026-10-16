@@ -149,7 +149,8 @@ main { padding: 16px; }
 .top-btn.ghost:hover:not(:disabled) { background: var(--bg); color: var(--text); }
 .top-btn.ghost:disabled { opacity: .3; cursor: default; }
 .top-btn.primary { padding: 0 16px 0 12px; background: var(--primary); color: #fff; box-shadow: 0 1px 2px rgba(79, 124, 255, .3), 0 2px 8px rgba(79, 124, 255, .2); }
-.top-btn.primary:hover { background: #3f6cf0; box-shadow: 0 2px 4px rgba(79, 124, 255, .35), 0 4px 14px rgba(79, 124, 255, .28); }
+.top-btn.primary:disabled { opacity: .4; cursor: default; box-shadow: none; }
+.top-btn.primary:hover:not(:disabled) { background: #3f6cf0; box-shadow: 0 2px 4px rgba(79, 124, 255, .35), 0 4px 14px rgba(79, 124, 255, .28); }
 .person-chip .edit .ico { width: 14px; height: 14px; }
 .person-chip .edit { display: inline-flex; align-items: center; }
 .avatar.room { background: #e5e7eb; color: #4b5563; }
@@ -336,6 +337,16 @@ dialog select { background: var(--surface); color: var(--text); }
 .icon-edit { display: flex; gap: 16px; align-items: center; }
 .icon-edit label.btn { color: var(--text); font-size: 14px; margin: 0; }
 
+/* ロック・メニュー */
+.action-menu { display: contents; }
+.menu-btn, .menu-label { display: none; }
+.top-btn.lock-btn .ico-unlocked, .top-btn.lock-btn[aria-pressed="true"] .ico-locked { display: none; }
+.top-btn.lock-btn[aria-pressed="true"] .ico-unlocked { display: block; }
+.top-btn.ghost.lock-btn[aria-pressed="true"] { background: var(--primary); color: #fff; }
+.top-btn.ghost.lock-btn[aria-pressed="true"]:hover:not(:disabled) { background: #3f6cf0; color: #fff; }
+body.locked .fab, body.locked .person-chip .edit { display: none; }
+body.locked .fc-event { cursor: default; }
+
 @media (max-width: 600px) {
   /* ヘッダー：タイトル＋人の横スクロール一列 */
   .topbar { gap: 8px; padding: 10px 12px; flex-wrap: nowrap; }
@@ -344,11 +355,46 @@ dialog select { background: var(--surface); color: var(--text); }
   .people::-webkit-scrollbar { display: none; }
   .person-chip { padding: 2px 8px 2px 2px; font-size: 13px; gap: 4px; }
   .person-chip .avatar { width: 24px; height: 24px; font-size: 11px; }
-  .top-actions { gap: 2px; }
+  .top-actions { gap: 2px; position: relative; }
   .top-btn { height: 36px; min-width: 36px; }
   .top-btn.ghost { width: 36px; }
   .top-btn.primary { width: 36px; padding: 0; }
   .top-btn.primary .label { display: none; }
+  /* ロック以外のボタンは「…」メニューに格納 */
+  .menu-btn { display: inline-flex; }
+  .menu-btn[aria-expanded="true"] { background: var(--bg); color: var(--text); }
+  .action-menu {
+    display: none;
+    position: absolute;
+    top: calc(100% + 10px);
+    right: 0;
+    z-index: 30;
+    min-width: 200px;
+    padding: 6px;
+    flex-direction: column;
+    gap: 2px;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    box-shadow: 0 8px 28px rgba(0, 0, 0, .18);
+  }
+  .action-menu.open { display: flex; }
+  .action-menu .top-btn, .action-menu .top-btn.ghost, .action-menu .top-btn.primary {
+    width: 100%;
+    height: 44px;
+    justify-content: flex-start;
+    gap: 12px;
+    padding: 0 12px;
+    border-radius: 10px;
+    background: transparent;
+    color: var(--text);
+    box-shadow: none;
+    font-weight: 500;
+  }
+  .action-menu .top-btn:hover:not(:disabled) { background: var(--bg); }
+  .action-menu .top-btn.ghost:disabled { opacity: .4; }
+  .action-menu .menu-label { display: inline; }
+  .action-menu .top-btn .label { display: none; }
   /* 右下のボタンと重ならないよう左に寄せる */
   .toast { left: 12px; right: 84px; transform: none; max-width: none; justify-content: space-between; }
 
