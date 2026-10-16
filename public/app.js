@@ -916,6 +916,197 @@ function defaultDay() {
   return now >= view.currentStart && now < view.currentEnd ? now : view.currentStart;
 }
 
+// ---------- CSV取り込み（Googleカレンダー形式） ----------
+// 引用符・引用符内の改行とカンマに対応した最小限のCSVパーサー
+function parseCsv(text) {
+  const rows = [];
+  let row = [], cell = '', quoted = false;
+  for (let i = 0; i < text.length; i++) {
+    const ch = text[i];
+    if (quoted) {
+      if (ch === '"') {
+        if (text[i + 1] === '"') { cell += '"'; i++; } else quoted = false;
+      } else cell += ch;
+    } else if (ch === '"') quoted = true;
+    else if (ch === ',') { row.push(cell); cell = ''; }
+    else if (ch === '\n' || ch === '\r') {
+      if (ch === '\r' && text[i + 1] === '\n') i++;
+      row.push(cell); cell = '';
+      rows.push(row); row = [];
+    } else cell += ch;
+  }
+  if (cell !== '' || row.length) { row.push(cell); rows.push(row); }
+  return rows.filter((r) => r.some((c) => c.trim() !== ''));
+}
+
+const IMPORT_COLS = {
+  subject: ['subject', '件名', 'タイトル'],
+  startDate: ['start date', '開始日'],
+  startTime: ['start time', '開始時刻', '開始時間'],
+  endDate: ['end date', '終了日'],
+  endTime: ['end time', '終了時刻', '終了時間'],
+  allDay: ['all day event', '終日イベント', '終日'],
+  description: ['description', '説明', '備考'],
+};
+
+// 'MM/DD/YYYY' 'YYYY-MM-DD' 'YYYY/MM/DD' → 'YYYY-MM-DD'（読めなければ null）
+function importDate(v) {
+  v = (v || '').trim();
+  let y, m, d, mt;
+  if ((mt = v.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/))) [m, d, y] = [mt[1], mt[2], mt[3]];
+  else if ((mt = v.match(/^(\d{4})[-/](\d{1,2})[-/](\d{1,2})$/))) [y, m, d] = [mt[1], mt[2], mt[3]];
+  else return null;
+  const dt = new Date(Number(y), Number(m) - 1, Number(d));
+  if (dt.getMonth() !== Number(m) - 1 || dt.getDate() !== Number(d)) return null;
+  return toDate(dt);
+}
+
+// '9:00 AM' '09:00 PM' '21:00' → 'HH:MM'（読めなければ null）
+function importTime(v) {
+  const mt = (v || '').trim().match(/^(\d{1,2}):(\d{2})(?::\d{2})?\s*([AaPp][Mm])?$/);
+  if (!mt) return null;
+  let h = Number(mt[1]);
+  const min = Number(mt[2]);
+  if (mt[3]) {
+    if (h < 1 || h > 12) return null;
+    h = h % 12 + (/p/i.test(mt[3]) ? 12 : 0);
+  }
+  if (h > 23 || min > 59) return null;
+  return `${pad(h)}:${pad(min)}`;
+}
+
+// kind: ok=取り込める / allDay=終日 / multi=日またぎ / bad=時刻が読めない・終了が開始以前
+function parseImportEvents(text) {
+  const rows = parseCsv(text.replace(/^﻿/, ''));
+  if (!rows.length) throw new Error('CSVが空です');
+  const header = rows[0].map((h) => h.trim().toLowerCase());
+  const col = {};
+  for (const [key, names] of Object.entries(IMPORT_COLS)) col[key] = header.findIndex((h) => names.includes(h));
+  if (col.subject < 0 || col.startDate < 0) throw new Error('Googleカレンダー形式のCSVではありません（Subject と Start Date の列が必要です）');
+  const get = (r, k) => (col[k] >= 0 ? (r[col[k]] ?? '').trim() : '');
+  return rows.slice(1).map((r) => {
+    const ev = { title: get(r, 'subject'), note: get(r, 'description').slice(0, 100) };
+    const sd = importDate(get(r, 'startDate'));
+    if (/^(true|yes|1|はい)$/i.test(get(r, 'allDay'))) return { ...ev, kind: 'allDay' };
+    const ed = importDate(get(r, 'endDate')) || sd;
+    const st = importTime(get(r, 'startTime'));
+    const et = importTime(get(r, 'endTime'));
+    if (!sd || !st || !et) return { ...ev, kind: 'bad' };
+    if (sd !== ed) return { ...ev, kind: 'multi' };
+    if (st >= et) return { ...ev, kind: 'bad' };
+    return { ...ev, kind: 'ok', start: `${sd}T${st}:00`, end: `${ed}T${et}:00` };
+  });
+}
+
+let importEvents = [];
+let importTitleList = []; // { title, ok, skipped }
+let importPerson = null;
+const SKIP_LABEL = { allDay: '終日', multi: '日またぎ', bad: '時刻が不正' };
+
+function renderImportPicker() {
+  const box = $('#importPicker');
+  box.replaceChildren();
+  for (const p of people) {
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.className = p.id === importPerson ? 'selected' : '';
+    b.append(avatar(p), p.name);
+    b.onclick = () => { importPerson = p.id; renderImportPicker(); updateImportSummary(); };
+    box.append(b);
+  }
+}
+
+function checkedImportTitles() {
+  return new Set([...document.querySelectorAll('#importTitles input:checked')].map((c) => importTitleList[Number(c.value)].title));
+}
+
+function updateImportSummary() {
+  const titles = checkedImportTitles();
+  const chosen = importEvents.filter((e) => titles.has(e.title));
+  const ok = chosen.filter((e) => e.kind === 'ok').length;
+  const skips = {};
+  chosen.forEach((e) => { if (e.kind !== 'ok') skips[e.kind] = (skips[e.kind] || 0) + 1; });
+  $('#importCount').textContent = `${ok}件`;
+  $('#importSkipped').textContent = Object.keys(skips).length
+    ? '取り込めない予定：' + Object.entries(skips).map(([k, n]) => `${SKIP_LABEL[k]}${n}件`).join('、')
+    : '';
+  $('#importSubmit').disabled = !ok || !importPerson;
+}
+
+function openImportDialog(name, events, error) {
+  importEvents = events;
+  importPerson = people.length === 1 ? people[0].id : null;
+  $('#importFileName').textContent = name;
+  $('#importError').textContent = error || '';
+  const byTitle = new Map();
+  for (const e of events) {
+    const t = byTitle.get(e.title) || { title: e.title, ok: 0, skipped: 0 };
+    if (e.kind === 'ok') t.ok++; else t.skipped++;
+    byTitle.set(e.title, t);
+  }
+  importTitleList = [...byTitle.values()];
+  const box = $('#importTitles');
+  box.replaceChildren(...importTitleList.map((t, i) => {
+    const l = document.createElement('label');
+    l.className = 'check';
+    const c = document.createElement('input');
+    c.type = 'checkbox'; c.value = i;
+    c.checked = t.ok > 0 && t.title.includes('在室');
+    c.disabled = t.ok === 0;
+    l.append(c, document.createTextNode(` ${t.title || '（タイトルなし）'}  ${t.ok}件${t.skipped ? `（取り込めない${t.skipped}件）` : ''}`));
+    return l;
+  }));
+  renderImportPicker();
+  updateImportSummary();
+  $('#importDialog').showModal();
+}
+
+async function readImportFile(file) {
+  const buf = await file.arrayBuffer();
+  try { return new TextDecoder('utf-8', { fatal: true }).decode(buf); }
+  catch { return new TextDecoder('shift_jis').decode(buf); }
+}
+
+$('#importBtn').addEventListener('click', () => $('#importFile').click());
+$('#importFile').addEventListener('change', async (e) => {
+  const file = e.target.files[0];
+  e.target.value = ''; // 同じファイルをもう一度選べるように
+  if (!file) return;
+  try {
+    openImportDialog(file.name, parseImportEvents(await readImportFile(file)));
+  } catch (err) {
+    openImportDialog(file.name, [], err.message);
+  }
+});
+$('#importForm').addEventListener('change', (e) => {
+  if (e.target.closest('#importTitles')) updateImportSummary();
+});
+$('#importForm').addEventListener('click', (e) => {
+  const all = 'importAll' in e.target.dataset;
+  if (!all && !('importNone' in e.target.dataset)) return;
+  document.querySelectorAll('#importTitles input:not(:disabled)').forEach((c) => { c.checked = all; });
+  updateImportSummary();
+});
+$('#importForm').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const titles = checkedImportTitles();
+  const items = importEvents.filter((ev) => ev.kind === 'ok' && titles.has(ev.title))
+    .map(({ start, end, note }) => ({ start, end, note }));
+  if (!importPerson || !items.length) return;
+  $('#importSubmit').disabled = true;
+  try {
+    const r = await api('POST', '/api/stays/import', { person_id: importPerson, items });
+    $('#importDialog').close();
+    calendar.refetchEvents();
+    const dup = r.skipped ? `（取り込み済みの${r.skipped}件は除く）` : '';
+    if (r.created) pushUndo(`在室を${r.created}件取り込みました${dup}`, () => api('POST', '/api/stays/remove', { ids: r.ids }));
+    else showToast(`すべて取り込み済みでした（${r.skipped}件）`, false);
+  } catch (err) {
+    $('#importError').textContent = err.message;
+    $('#importSubmit').disabled = false;
+  }
+});
+
 // ---------- CSV出力（Googleカレンダー形式） ----------
 const exportState = { stays: [], memos: [] };
 
