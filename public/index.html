@@ -43,11 +43,51 @@
   <button id="addMemoBtn" class="fab small" title="メモを追加" aria-label="メモを追加"><svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="5" y="3" width="14" height="18" rx="2"/><path d="M9 8h6M9 12h6M9 16h3"/></svg></button>
   <button id="addStayBtn" class="fab" title="在室を追加" aria-label="在室を追加"><svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg></button>
 
+  <div id="kbBadge" class="kb-badge" hidden></div>
+
   <!-- 変更の通知と「元に戻す」 -->
   <div id="toast" class="toast" role="status" hidden>
     <span id="toastText"></span>
     <button type="button" id="toastUndo" class="toast-undo">元に戻す</button>
   </div>
+
+  <!-- キーボードモード：操作する人の選択 -->
+  <dialog id="kbPersonDialog">
+    <div>
+      <h2>だれで操作しますか？</h2>
+      <p class="hint">数字キーか ↑↓ で選んで、Enter で決定。Esc でやめる</p>
+      <div id="kbPersonList" class="kb-person-list"></div>
+    </div>
+  </dialog>
+
+  <!-- キーボードモード：キー一覧 -->
+  <dialog id="kbHelpDialog">
+    <div>
+      <h2>キーボードモードのキー</h2>
+      <table class="kb-help">
+        <tr><th><kbd>i</kbd></th><td>キーボードモードに入る</td></tr>
+        <tr><th><kbd>Esc</kbd></th><td>選択を解除 → もう一度で終了（ロックに戻る）</td></tr>
+        <tr><th><kbd>←</kbd><kbd>→</kbd><kbd>↑</kbd><kbd>↓</kbd></th><td>カーソル移動（<kbd>h</kbd><kbd>l</kbd><kbd>k</kbd><kbd>j</kbd> も可）。月は日・週、週/日は日・30分</td></tr>
+        <tr><th><kbd>Shift</kbd> + 移動</th><td>範囲を選ぶ</td></tr>
+        <tr><th><kbd>Home</kbd><kbd>End</kbd></th><td>月：週の頭・末 / 週・日：0:00・23:30</td></tr>
+        <tr><th><kbd>PageUp</kbd><kbd>PageDown</kbd></th><td>前・次の月／週／日（<kbd>[</kbd><kbd>]</kbd> も可）</td></tr>
+        <tr><th><kbd>t</kbd></th><td>今日へ</td></tr>
+        <tr><th><kbd>m</kbd><kbd>w</kbd><kbd>d</kbd></th><td>月・週・日表示</td></tr>
+        <tr><th><kbd>Enter</kbd></th><td>在室を追加（イベントを選んでいれば編集）</td></tr>
+        <tr><th><kbd>n</kbd></th><td>メモを追加</td></tr>
+        <tr><th><kbd>Tab</kbd></th><td>その日のイベントを順に選ぶ（<kbd>Shift</kbd>+<kbd>Tab</kbd> で逆順）</td></tr>
+        <tr><th><kbd>e</kbd></th><td>選んだイベントを編集</td></tr>
+        <tr><th><kbd>x</kbd><kbd>Delete</kbd></th><td>選んだイベントを削除</td></tr>
+        <tr><th><kbd>p</kbd></th><td>操作する人を変える</td></tr>
+        <tr><th><kbd>u</kbd></th><td>元に戻す（<kbd>Ctrl</kbd>+<kbd>Z</kbd> も可）</td></tr>
+        <tr><th><kbd>?</kbd></th><td>このヘルプ</td></tr>
+      </table>
+      <div class="actions">
+        <span class="spacer"></span>
+        <button type="button" class="btn primary" data-close>閉じる</button>
+      </div>
+    </div>
+  </dialog>
 
   <!-- ロック中の予定・メモの閲覧（編集はできない） -->
   <dialog id="viewDialog">
@@ -89,8 +129,8 @@
         </div>
       </div>
       <div class="row">
-        <label>開始<input type="time" name="startTime" required step="900"></label>
-        <label>終了<input type="time" name="endTime" required step="900"></label>
+        <label>開始<input type="time" name="startTime" required step="60"></label>
+        <label>終了<input type="time" name="endTime" required step="60"></label>
       </div>
       <label>メモ<input type="text" name="note" maxlength="100" placeholder="任意"></label>
       <p class="error" id="stayError"></p>
@@ -126,11 +166,11 @@
       <div id="memoRange">
         <div class="row">
           <label>開始日<input type="date" name="startDate"></label>
-          <label class="memo-time">開始時間<input type="time" name="startTime" step="900"></label>
+          <label class="memo-time">開始時間<input type="time" name="startTime" step="60"></label>
         </div>
         <div class="row">
           <label>終了日<input type="date" name="endDate"></label>
-          <label class="memo-time">終了時間<input type="time" name="endTime" step="900"></label>
+          <label class="memo-time">終了時間<input type="time" name="endTime" step="60"></label>
         </div>
         <div id="memoRepeat">
           <div class="row">

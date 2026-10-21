@@ -480,3 +480,45 @@ dialog .export-people label.check, dialog .export-list label.check { margin: 4px
 .view-list { margin: 0 0 8px; }
 .view-list dt { font-size: 12px; color: var(--muted); margin-top: 10px; }
 .view-list dd { margin: 2px 0 0; font-size: 15px; white-space: pre-wrap; word-break: break-word; }
+
+/* キーボードモード（画面のみ。印刷には出さない） */
+.kb-badge {
+  position: fixed;
+  left: 16px;
+  bottom: calc(16px + env(safe-area-inset-bottom));
+  z-index: 15;
+  padding: 8px 14px;
+  border-radius: 999px;
+  background: #1f2328;
+  color: #fff;
+  font-size: 13px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, .25);
+}
+.kb-person-list { display: flex; flex-direction: column; gap: 6px; margin-top: 8px; }
+.kb-person {
+  display: flex; align-items: center; gap: 10px;
+  padding: 10px 12px; border: 1px solid var(--border); border-radius: 10px;
+  background: var(--surface); color: var(--text); font: inherit; font-size: 15px; text-align: left; cursor: pointer;
+}
+.kb-person:hover { background: var(--bg); }
+.kb-person:focus-visible, .kb-person.selected { outline: none; border-color: var(--primary); background: #eaf0ff; }
+kbd {
+  display: inline-block; min-width: 1.6em; margin: 0 2px; padding: 1px 6px;
+  border: 1px solid var(--border); border-bottom-width: 2px; border-radius: 6px;
+  background: var(--surface); color: var(--text); font: 600 12px/1.5 inherit; text-align: center;
+}
+.kb-help { width: 100%; border-collapse: collapse; margin-bottom: 8px; font-size: 13px; }
+.kb-help th { text-align: left; white-space: nowrap; padding: 6px 12px 6px 0; vertical-align: top; font-weight: 400; }
+.kb-help td { padding: 6px 0; color: var(--text); }
+.kb-help tr + tr { border-top: 1px solid var(--border); }
+#kbHelpDialog { max-width: 560px; }
+@media screen {
+  .fc .fc-daygrid-day.kb-range { background: rgba(79, 124, 255, .14); }
+  .fc .fc-daygrid-day.kb-cursor { outline: 3px solid var(--primary); outline-offset: -3px; background: rgba(79, 124, 255, .22); position: relative; z-index: 2; }
+  .fc .fc-timegrid-col.kb-col { background: rgba(79, 124, 255, .07); }
+  .fc .fc-timegrid-col.kb-cursor-col { background: rgba(79, 124, 255, .13); }
+  .fc .fc-timegrid-slot-lane.kb-row { background: rgba(79, 124, 255, .14); }
+  .fc .fc-timegrid-slot-lane.kb-cursor { outline: 2px solid var(--primary); outline-offset: -2px; background: rgba(79, 124, 255, .3); }
+  .fc-event.kb-event-focus { outline: 3px solid #1f2328; outline-offset: 1px; z-index: 6; }
+}
+@media (max-width: 600px), print { .kb-badge { display: none !important; } }
