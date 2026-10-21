@@ -2,6 +2,8 @@ let people = [];
 const ROOM = 'room'; // 部屋のメモを表すキー
 const hidden = new Set(); // 非表示中の person_id（部屋は ROOM）
 let locked = true; // 誤操作を防ぐため、ページを開いたときは必ずロックから始める
+// キーボードモードの状態。person=操作する人、date/time=カーソル、anchor=範囲選択の起点、focus=選んだイベントの id
+const kb = { on: false, person: null, date: '', time: '09:00', anchor: null, focus: null, scroll: false };
 let calendar;
 
 const $ = (sel) => document.querySelector(sel);
@@ -208,6 +210,7 @@ function autoLock() {
 }
 
 function setLocked(v) {
+  if (v && kb.on) { exitKb(); return; } // キーボードモード中にロックしたら、モードも終わらせる（exitKb が再度ロックを呼ぶ）
   locked = v;
   document.body.classList.toggle('locked', v);
   if (calendar) {
@@ -244,6 +247,295 @@ $('#menuBtn').addEventListener('click', (e) => {
 $('#actionMenu').addEventListener('click', () => setMenu(false));
 document.addEventListener('click', (e) => { if (!e.target.closest('.top-actions')) setMenu(false); });
 document.addEventListener('keydown', (e) => { if (e.key === 'Escape') setMenu(false); });
+
+// ---------- キーボードモード ----------
+// i で入る。ロックを解除して月表示にし、操作する人を選ぶ。Excel のようにカーソルを動かして入力する
+const VIEW_KEYS = { m: 'dayGridMonth', w: 'timeGridWeek', d: 'timeGridDay' };
+const SLOT_MIN = 30; // 週・日表示のカーソルの刻み（分）
+
+const isTimeView = () => calendar.view.type !== 'dayGridMonth';
+const toMin = (t) => Number(t.slice(0, 2)) * 60 + Number(t.slice(3, 5));
+const fromMin = (v) => `${pad(Math.floor(v / 60))}:${pad(v % 60)}`;
+// カーソルの時刻は 0:00〜23:30 の範囲で動かす
+const kbTimeAdd = (t, n) => fromMin(Math.min(23 * 60 + 30, Math.max(0, toMin(t) + n)));
+// 追加の終了時刻（24:00 になるときは 23:59）
+const kbEndTime = (t, n) => (toMin(t) + n >= 24 * 60 ? '23:59' : fromMin(toMin(t) + n));
+
+function renderKbBadge() {
+  const b = $('#kbBadge');
+  b.hidden = !kb.on;
+  if (kb.on) b.textContent = `キーボードモード｜${personById(kb.person)?.name || '（人を選択中）'}｜? ヘルプ｜Esc 終了`;
+}
+
+function enterKb() {
+  if (!people.length) { showToast('先に「人を追加」で人を登録してください', false); return; }
+  document.activeElement?.blur?.();
+  // 今日が見えていれば今日、そうでなければ表示中の月の1日から始める
+  const v = calendar.view;
+  const now = new Date();
+  kb.date = now >= v.currentStart && now < v.currentEnd ? toDate(now) : toDate(v.currentStart);
+  kb.time = '09:00';
+  kb.anchor = null;
+  kb.focus = null;
+  kb.person = people.length === 1 ? people[0].id : null; // 1人のときは選ぶ必要がない
+  kb.on = true;
+  setLocked(false);
+  document.body.classList.add('kb-mode');
+  calendar.changeView('dayGridMonth', kb.date);
+  showToast('キーボードモードにしました', false);
+  renderKbBadge();
+  applyKbCursor();
+  if (!kb.person) openKbPerson();
+}
+
+function exitKb() {
+  if (!kb.on) return;
+  kb.on = false;
+  kb.anchor = null;
+  kb.focus = null;
+  kb.person = null;
+  document.body.classList.remove('kb-mode');
+  if ($('#kbPersonDialog').open) $('#kbPersonDialog').close();
+  applyKbCursor();
+  renderKbBadge();
+  setLocked(true);
+  showToast('キーボードモードを終了しました（ロックしました）', false);
+}
+
+function openKbPerson() {
+  const list = $('#kbPersonList');
+  list.replaceChildren(...people.map((p, i) => {
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.className = 'kb-person' + (p.id === kb.person ? ' selected' : '');
+    const k = document.createElement('kbd');
+    k.textContent = i < 9 ? String(i + 1) : '';
+    k.hidden = i >= 9;
+    b.append(k, avatar(p, 'small'), p.name);
+    b.onclick = () => { kb.person = p.id; $('#kbPersonDialog').close(); };
+    return b;
+  }));
+  $('#kbPersonDialog').showModal();
+  (list.querySelector('.selected') || list.firstElementChild).focus();
+}
+
+$('#kbPersonDialog').addEventListener('keydown', (e) => {
+  const btns = [...$('#kbPersonList').children];
+  if (/^[1-9]$/.test(e.key)) { btns[Number(e.key) - 1]?.click(); return; }
+  const i = btns.indexOf(document.activeElement);
+  if (e.key === 'ArrowDown' || e.key === 'j') { e.preventDefault(); btns[Math.min(i + 1, btns.length - 1)]?.focus(); }
+  if (e.key === 'ArrowUp' || e.key === 'k') { e.preventDefault(); btns[Math.max(i - 1, 0)]?.focus(); }
+});
+$('#kbPersonDialog').addEventListener('close', () => {
+  if (kb.on && !kb.person) exitKb(); // 最初の選択をやめたら、キーボードモードに入るのもやめる
+  renderKbBadge();
+});
+// ダイアログを閉じたあと、フォーカスが残ったボタンを Enter/Space で押してしまわないようにする
+document.querySelectorAll('dialog').forEach((d) =>
+  d.addEventListener('close', () => { if (kb.on) document.activeElement?.blur?.(); }));
+
+// カーソルと範囲選択が指す日付・時刻
+function kbSelection() {
+  const a = kb.anchor;
+  if (!a) return { dates: [kb.date], t0: kb.time, t1: kb.time };
+  if (isTimeView()) {
+    const [d0, d1] = a.date <= kb.date ? [a.date, kb.date] : [kb.date, a.date];
+    const dates = [];
+    for (let d = d0; d <= d1; d = addDays(d, 1)) dates.push(d);
+    const [t0, t1] = a.time <= kb.time ? [a.time, kb.time] : [kb.time, a.time];
+    return { dates, t0, t1 };
+  }
+  // 月表示：起点とカーソルを角にした、週（行）×曜日（列）の四角形
+  const dow = (d) => new Date(d + 'T00:00:00').getDay();
+  const weekOf = (d) => addDays(d, -dow(d));
+  const [w0, w1] = [weekOf(a.date), weekOf(kb.date)].sort();
+  const [c0, c1] = [dow(a.date), dow(kb.date)].sort((x, y) => x - y);
+  const dates = [];
+  for (let w = w0; w <= w1; w = addDays(w, 7)) for (let c = c0; c <= c1; c++) dates.push(addDays(w, c));
+  return { dates, t0: kb.time, t1: kb.time };
+}
+
+// 表示にカーソル・範囲・選んだイベントのクラスを付ける（FullCalendar が描き直すたびに付け直す）
+function applyKbCursor() {
+  if (!calendar) return;
+  const classes = ['kb-range', 'kb-cursor', 'kb-col', 'kb-cursor-col', 'kb-row', 'kb-event-focus'];
+  document.querySelectorAll(classes.map((c) => '.' + c).join(',')).forEach((el) => el.classList.remove(...classes));
+  if (!kb.on) return;
+  const sel = kbSelection();
+  const dates = new Set(sel.dates);
+  let target;
+  if (isTimeView()) {
+    document.querySelectorAll('.fc-timegrid-col[data-date]').forEach((el) => {
+      if (dates.has(el.dataset.date)) el.classList.add('kb-col');
+      if (el.dataset.date === kb.date) el.classList.add('kb-cursor-col');
+    });
+    document.querySelectorAll('.fc-timegrid-slot-lane[data-time]').forEach((el) => {
+      const t = el.dataset.time.slice(0, 5);
+      if (t >= sel.t0 && t <= sel.t1) el.classList.add('kb-row');
+      if (t === kb.time) { el.classList.add('kb-cursor'); target = el; }
+    });
+  } else {
+    document.querySelectorAll('.fc-daygrid-day[data-date]').forEach((el) => {
+      if (dates.has(el.dataset.date)) el.classList.add('kb-range');
+      if (el.dataset.date === kb.date) { el.classList.add('kb-cursor'); target = el; }
+    });
+  }
+  if (kb.focus) {
+    document.querySelectorAll(`[data-eid="${kb.focus}"]`).forEach((el) => { el.classList.add('kb-event-focus'); target = el; });
+  }
+  if (kb.scroll && target) {
+    target.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+    kb.scroll = false;
+  }
+}
+
+// カーソルが表示の外に出たら、その日が見える表示に移す
+function kbShow() {
+  const v = calendar.view;
+  const d = new Date(kb.date + 'T00:00:00');
+  if (d < v.activeStart || d >= v.activeEnd) calendar.gotoDate(kb.date);
+  requestAnimationFrame(applyKbCursor);
+}
+
+function kbMove(dx, dy, extend) {
+  if (extend && !kb.anchor) kb.anchor = { date: kb.date, time: kb.time };
+  if (!extend) kb.anchor = null;
+  kb.focus = null;
+  if (isTimeView()) {
+    kb.date = addDays(kb.date, dx);
+    kb.time = kbTimeAdd(kb.time, dy * SLOT_MIN);
+  } else {
+    kb.date = addDays(kb.date, dx + dy * 7);
+  }
+  kb.scroll = true;
+  kbShow();
+}
+
+// 前・次の月/週/日へ（月は同じ日付、なければ月末）
+function kbPage(dir) {
+  const d = new Date(kb.date + 'T00:00:00');
+  const type = calendar.view.type;
+  if (type === 'dayGridMonth') {
+    const day = d.getDate();
+    d.setDate(1);
+    d.setMonth(d.getMonth() + dir);
+    d.setDate(Math.min(day, new Date(d.getFullYear(), d.getMonth() + 1, 0).getDate()));
+  } else {
+    d.setDate(d.getDate() + dir * (type === 'timeGridWeek' ? 7 : 1));
+  }
+  kbGoto(toDate(d));
+}
+
+function kbGoto(date) {
+  kb.date = date;
+  kb.anchor = null;
+  kb.focus = null;
+  kb.scroll = true;
+  calendar.gotoDate(date);
+  requestAnimationFrame(applyKbCursor);
+}
+
+// カーソルの日にかかっているイベント（在室・メモ）
+function kbDayEvents() {
+  const ds = new Date(kb.date + 'T00:00:00');
+  const de = new Date(ds);
+  de.setDate(de.getDate() + 1);
+  return calendar.getEvents()
+    .filter((ev) => ev.start < de && (ev.end || new Date(+ev.start + 1)) > ds)
+    .sort((a, b) => a.start - b.start || (a.id > b.id ? 1 : -1));
+}
+
+function kbCycle(dir) {
+  const evs = kbDayEvents();
+  if (!evs.length) { showToast('この日にイベントはありません', false); return; }
+  const i = evs.findIndex((e) => e.id === kb.focus);
+  const next = i < 0 ? (dir > 0 ? 0 : evs.length - 1) : (i + dir + evs.length) % evs.length;
+  kb.focus = evs[next].id;
+  kb.scroll = true;
+  applyKbCursor();
+}
+
+const kbFocused = () => (kb.focus ? calendar.getEventById(kb.focus) : null);
+
+function kbEdit(ev) {
+  const { kind, stay, memo } = ev.extendedProps;
+  if (kind === 'memo') openMemoDialog(memo);
+  else openStayDialog(stay, new Date(stay.start), new Date(stay.end));
+}
+
+async function kbDelete(ev) {
+  const { kind, stay, memo } = ev.extendedProps;
+  if (await (kind === 'memo' ? deleteMemo(memo) : deleteStay(stay))) kb.focus = null;
+}
+
+// 操作する人の在室を追加（月：9:00〜18:00、週・日：カーソルの時刻から1時間、範囲選択中はその範囲）
+function kbAddStay() {
+  const sel = kbSelection();
+  const d0 = sel.dates[0];
+  const startT = isTimeView() ? sel.t0 : '09:00';
+  const endT = isTimeView() ? kbEndTime(kb.anchor ? sel.t1 : sel.t0, kb.anchor ? SLOT_MIN : 60) : '18:00';
+  openStayDialog(null, new Date(`${d0}T${startT}:00`), new Date(`${d0}T${endT}:00`), sel.dates);
+}
+
+document.addEventListener('keydown', (e) => {
+  if (e.isComposing || e.ctrlKey || e.metaKey || e.altKey) return;
+  // 入力中やダイアログ操作中は、文字入力などのじゃまをしない
+  if (document.querySelector('dialog[open]') || e.target.closest('input, textarea, select, [contenteditable]')) return;
+  if (!kb.on) {
+    if (e.key === 'i' && !e.shiftKey) { e.preventDefault(); enterKb(); }
+    return;
+  }
+  const MOVES = { ArrowLeft: [-1, 0], ArrowRight: [1, 0], ArrowUp: [0, -1], ArrowDown: [0, 1],
+    h: [-1, 0], l: [1, 0], k: [0, -1], j: [0, 1], H: [-1, 0], L: [1, 0], K: [0, -1], J: [0, 1] };
+  const k = e.key;
+  if (MOVES[k]) {
+    e.preventDefault();
+    kbMove(...MOVES[k], e.shiftKey || /^[A-Z]$/.test(k)); // Shift（または大文字の hjkl）で範囲選択
+    return;
+  }
+  if (VIEW_KEYS[k]) {
+    e.preventDefault();
+    kb.anchor = null;
+    kb.focus = null;
+    kb.scroll = true;
+    calendar.changeView(VIEW_KEYS[k], kb.date);
+    requestAnimationFrame(applyKbCursor);
+    return;
+  }
+  const ev = kbFocused();
+  switch (k) {
+    case 'Escape':
+      e.preventDefault();
+      if (kb.anchor || kb.focus) { kb.anchor = null; kb.focus = null; applyKbCursor(); } else exitKb();
+      break;
+    case 'Enter':
+      e.preventDefault();
+      if (ev) kbEdit(ev); else kbAddStay();
+      break;
+    case 'e': if (ev) { e.preventDefault(); kbEdit(ev); } break;
+    case 'x': case 'Delete': case 'Backspace': if (ev) { e.preventDefault(); kbDelete(ev); } break;
+    case 'n': e.preventDefault(); openMemoDialog(null, { dates: kbSelection().dates, allDay: true }); break;
+    case 'p': e.preventDefault(); openKbPerson(); break;
+    case 'u': e.preventDefault(); undoLast(); break;
+    case 't': e.preventDefault(); kbGoto(toDate(new Date())); break;
+    case 'Tab': e.preventDefault(); kbCycle(e.shiftKey ? -1 : 1); break;
+    case 'Home': case 'End': {
+      e.preventDefault();
+      const home = k === 'Home';
+      kb.anchor = null;
+      kb.focus = null;
+      if (isTimeView()) kb.time = home ? '00:00' : '23:30';
+      else { const dow = new Date(kb.date + 'T00:00:00').getDay(); kb.date = addDays(kb.date, home ? -dow : 6 - dow); }
+      kb.scroll = true;
+      kbShow();
+      break;
+    }
+    case 'PageUp': case '[': e.preventDefault(); kbPage(-1); break;
+    case 'PageDown': case ']': e.preventDefault(); kbPage(1); break;
+    case '?': e.preventDefault(); $('#kbHelpDialog').showModal(); break;
+    default:
+  }
+});
 
 // 変更前の在室・メモに書き戻す（相手が消されていたら知らせる）
 const putBack = (kind, row) => {
@@ -386,7 +678,10 @@ function initCalendar() {
       label.textContent = name;
       top.prepend(label);
     },
+    eventDidMount: (arg) => { arg.el.dataset.eid = arg.event.id; },
+    eventsSet: () => requestAnimationFrame(applyKbCursor),
     datesSet: (info) => {
+      requestAnimationFrame(applyKbCursor);
       if (!calendar) return;
       const before = calendar.getOption('height');
       applyHeight(info.view.type);
@@ -616,7 +911,7 @@ function openStayDialog(stay, start, end, dates = []) {
     return;
   }
   editingStay = stay;
-  pickedPerson = stay ? stay.person_id : (people.length === 1 ? people[0].id : null);
+  pickedPerson = stay ? stay.person_id : (kb.on && kb.person) || (people.length === 1 ? people[0].id : null);
   const f = $('#stayForm');
   $('#stayTitle').textContent = stay ? '在室を編集' : '在室を追加';
   f.date.value = toDate(start);
@@ -637,6 +932,7 @@ function openStayDialog(stay, start, end, dates = []) {
   $('#stayError').textContent = '';
   renderPicker();
   $('#stayDialog').showModal();
+  if (kb.on) f.startTime.focus(); // キーボードモードでは時刻から打ち始められる
 }
 
 $('#stayForm').addEventListener('submit', async (e) => {
@@ -671,12 +967,15 @@ $('#stayForm').addEventListener('submit', async (e) => {
   }
 });
 
-$('#stayDelete').addEventListener('click', async () => {
-  if (!editingStay || !confirm('この在室を削除しますか？')) return;
-  const deleted = await api('DELETE', `/api/stays/${editingStay.id}`);
-  $('#stayDialog').close();
+async function deleteStay(stay) {
+  if (!confirm('この在室を削除しますか？')) return false;
+  const deleted = await api('DELETE', `/api/stays/${stay.id}`);
   if (deleted) pushUndo('在室を削除しました', () => api('POST', '/api/stays/restore', { items: [deleted] }));
   calendar.refetchEvents();
+  return true;
+}
+$('#stayDelete').addEventListener('click', async () => {
+  if (editingStay && await deleteStay(editingStay)) $('#stayDialog').close();
 });
 
 // ---------- メモダイアログ ----------
@@ -787,7 +1086,7 @@ function openMemoDialog(memo, opts = {}) {
       f.endTime.value = memo.end.slice(11, 16);
     }
   } else {
-    memoTarget = ROOM;
+    memoTarget = (kb.on && kb.person) || ROOM;
     f.allDay.checked = opts.allDay ?? true;
     f.startTime.value = opts.startTime || '09:00';
     f.endTime.value = opts.endTime || '10:00';
@@ -803,6 +1102,7 @@ function openMemoDialog(memo, opts = {}) {
   renderMemoPicker();
   updateMemoFields();
   $('#memoDialog').showModal();
+  if (kb.on) f.title.focus();
 }
 
 $('#memoForm').allDay.addEventListener('change', updateMemoFields);
@@ -863,12 +1163,15 @@ $('#memoForm').addEventListener('submit', async (e) => {
   }
 });
 
-$('#memoDelete').addEventListener('click', async () => {
-  if (!editingMemo || !confirm('このメモを削除しますか？')) return;
-  const deleted = await api('DELETE', `/api/memos/${editingMemo.id}`);
-  $('#memoDialog').close();
+async function deleteMemo(memo) {
+  if (!confirm('このメモを削除しますか？')) return false;
+  const deleted = await api('DELETE', `/api/memos/${memo.id}`);
   if (deleted) pushUndo('メモを削除しました', () => api('POST', '/api/memos/restore', { items: [deleted] }));
   calendar.refetchEvents();
+  return true;
+}
+$('#memoDelete').addEventListener('click', async () => {
+  if (editingMemo && await deleteMemo(editingMemo)) $('#memoDialog').close();
 });
 
 // 在室⇄メモの切替（選んだ日付と時間を引き継ぐ）
