@@ -1,45 +1,15 @@
+const path = require('path');
+const fs = require('fs');
+
+// .env を読む（すでに設定されている環境変数は上書きしない）。ENV_FILE で場所を変えられる（テスト用）
+const ENV_FILE = process.env.ENV_FILE || path.join(__dirname, '.env');
+if (fs.existsSync(ENV_FILE)) process.loadEnvFile(ENV_FILE);
+
 const express = require('express');
 const compression = require('compression');
 const multer = require('multer');
-const path = require('path');
-const fs = require('fs');
 const crypto = require('crypto');
-const { DatabaseSync } = require('node:sqlite');
-
-const DATA_DIR = process.env.DATA_DIR || path.join(__dirname, 'data');
-const UPLOAD_DIR = path.join(DATA_DIR, 'uploads');
-fs.mkdirSync(UPLOAD_DIR, { recursive: true });
-
-const db = new DatabaseSync(path.join(DATA_DIR, 'app.db'));
-db.exec(`
-  PRAGMA foreign_keys = ON;
-  CREATE TABLE IF NOT EXISTS people (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    name TEXT NOT NULL,
-    color TEXT NOT NULL DEFAULT '#4f7cff',
-    icon_path TEXT
-  );
-  CREATE TABLE IF NOT EXISTS stays (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    person_id INTEGER NOT NULL REFERENCES people(id) ON DELETE CASCADE,
-    start TEXT NOT NULL,
-    end TEXT NOT NULL,
-    note TEXT NOT NULL DEFAULT ''
-  );
-  CREATE INDEX IF NOT EXISTS idx_stays_start ON stays(start);
-  CREATE INDEX IF NOT EXISTS idx_stays_person ON stays(person_id);
-  -- person_id が NULL のメモは「部屋」のメモ
-  CREATE TABLE IF NOT EXISTS memos (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    person_id INTEGER REFERENCES people(id) ON DELETE CASCADE,
-    title TEXT NOT NULL,
-    all_day INTEGER NOT NULL DEFAULT 0,
-    start TEXT NOT NULL,
-    end TEXT NOT NULL
-  );
-  CREATE INDEX IF NOT EXISTS idx_memos_start ON memos(start);
-  CREATE INDEX IF NOT EXISTS idx_memos_person ON memos(person_id);
-`);
+const { db, UPLOAD_DIR, inTransaction } = require('./lib/db');
 
 const ALLOWED_EXT = { 'image/png': '.png', 'image/jpeg': '.jpg', 'image/gif': '.gif', 'image/webp': '.webp' };
 const upload = multer({
@@ -194,17 +164,6 @@ app.post('/api/people/restore', (req, res) => {
 });
 
 // ---- stays ----
-function inTransaction(fn) {
-  db.exec('BEGIN');
-  try {
-    fn();
-    db.exec('COMMIT');
-  } catch (err) {
-    db.exec('ROLLBACK');
-    throw err;
-  }
-}
-
 // 「元に戻す」で消したもの・変えたものを同じ id で書き戻す
 function restoreStays(items) {
   const upsert = db.prepare(`INSERT INTO stays (id, person_id, start, end, note) VALUES (?, ?, ?, ?, ?)

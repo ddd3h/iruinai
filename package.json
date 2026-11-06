@@ -5,13 +5,15 @@
   "license": "MIT",
   "type": "commonjs",
   "scripts": {
-    "start": "node server.js"
+    "start": "node server.js",
+    "test": "node --test \"test/**/*.test.js\""
   },
   "dependencies": {
     "compression": "^1.8.2",
     "express": "^5.2.1",
     "fullcalendar": "^6.1.21",
-    "multer": "^2.4.0"
+    "multer": "^2.4.0",
+    "nodemailer": "^10.3.1"
   },
   "optionalDependencies": {
     "sharp": "^0.35.5"
