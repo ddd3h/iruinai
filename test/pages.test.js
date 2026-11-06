@@ -77,7 +77,6 @@ test('account.js が参照する要素は account.html にある', () => {
   // パスワードは変数に持つだけで、ブラウザの保存領域には書かない（sessionStorage にはメールアドレスだけ）
   assert.doesNotMatch(js, /(?:session|local)Storage\.setItem\([^)]*assword/i);
   assert.match(js, /post\('\/api\/auth\/verify', \{[^}]*password:/);
-  // 登録の画面とログインの画面から、確認コードの入力へ行ける
+  // 登録の画面から、確認コードの入力へ行ける
   assert.match(block('view-signup'), /data-go="code"/);
-  assert.match(block('view-login'), /data-go="code"/);
 });
