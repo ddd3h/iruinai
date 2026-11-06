@@ -30,26 +30,54 @@ async function waitFor(fn, what, ms = 5000) {
 }
 
 // 一時の DATA_DIR・空きポートで server.js を子プロセスとして起動する。本番の data/ には触れない
-async function startServer(extraEnv = {}) {
+// 起動に失敗したら、子プロセスを止め、一時ディレクトリを消してから reject する
+// （呼び出し側は成功した後でしか srv.stop() を登録できないため）。
+// reject する Error には、確認用に pid と dataDir を付ける。
+// startTimeout は起動待ちの上限（ミリ秒）。テストで失敗経路を速く確かめるために変えられる
+async function startServer(extraEnv = {}, { startTimeout = 5000 } = {}) {
   const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'iruinai-test-'));
-  const port = await freePort();
-  const env = {
-    ...process.env,
-    PORT: String(port),
-    DATA_DIR: dataDir,
-    ROOM_PASSWORD: '',
-    SMTP_HOST: '',
-    PUBLIC_URL: '',
-    ENV_FILE: path.join(dataDir, 'none.env'), // 開発用の .env を読ませない
-    ...extraEnv,
-  };
-  const child = spawn(process.execPath, [path.join(ROOT, 'server.js')], { env, stdio: ['ignore', 'pipe', 'pipe'] });
+  let port;
+  let child;
+  let exited;
   let out = '';
-  child.stdout.on('data', (d) => { out += d; });
-  child.stderr.on('data', (d) => { out += d; });
-  const exited = new Promise((resolve) => child.on('exit', resolve));
-  await waitFor(() => out.includes('在室カレンダー: http') || (child.exitCode !== null && 'exited'), 'server start');
-  if (child.exitCode !== null) throw new Error('server exited:\n' + out);
+  try {
+    port = await freePort();
+    const env = {
+      ...process.env,
+      PORT: String(port),
+      DATA_DIR: dataDir,
+      ROOM_PASSWORD: '',
+      SMTP_HOST: '',
+      PUBLIC_URL: '',
+      ENV_FILE: path.join(dataDir, 'none.env'), // 開発用の .env を読ませない
+      ...extraEnv,
+    };
+    child = spawn(process.execPath, [path.join(ROOT, 'server.js')], { env, stdio: ['ignore', 'pipe', 'pipe'] });
+    let spawnError = null;
+    // 'close' は終了後に stdout/stderr を読み切ってから来る。起動に失敗したときは 'error' だけが来る
+    exited = new Promise((resolve) => {
+      child.on('close', resolve);
+      child.on('error', (err) => { spawnError = err; resolve(); });
+    });
+    child.stdout.on('data', (d) => { out += d; });
+    child.stderr.on('data', (d) => { out += d; });
+    const hasExited = () => spawnError !== null || child.exitCode !== null || child.signalCode !== null;
+    await waitFor(() => out.includes('在室カレンダー: http') || hasExited(), 'server start', startTimeout);
+    if (hasExited()) {
+      await exited; // 出力を読み切る
+      throw new Error(spawnError ? `server spawn failed: ${spawnError.message}` : 'server exited');
+    }
+  } catch (err) {
+    if (child) {
+      child.kill('SIGKILL'); // すでに終わっていれば何も起きない
+      await exited;
+    }
+    fs.rmSync(dataDir, { recursive: true, force: true });
+    const failure = new Error(`${err.message}\n${out}`, { cause: err });
+    failure.pid = child && child.pid;
+    failure.dataDir = dataDir;
+    throw failure;
+  }
 
   const mails = () => [...out.matchAll(/\[mail\] to=(\S+) subject=(.*)\n([\s\S]*?)\n\[\/mail\]/g)]
     .map((m) => ({ to: m[1], subject: m[2], text: m[3] }));
