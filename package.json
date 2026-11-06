@@ -4,6 +4,9 @@
   "private": true,
   "license": "MIT",
   "type": "commonjs",
+  "engines": {
+    "node": ">=22.13"
+  },
   "scripts": {
     "start": "node server.js",
     "test": "node --test \"test/**/*.test.js\""
