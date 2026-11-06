@@ -29,6 +29,8 @@ function removeIcon(iconPath) {
 }
 
 const COLOR_RE = /^#[0-9a-fA-F]{6}$/;
+const { createGuard } = require('./lib/guard');
+const guard = createGuard(db);
 const app = express();
 app.use(compression());
 app.use(express.json());
@@ -98,6 +100,7 @@ if (PASSWORD) {
 app.use(attachUser);
 app.use('/api/auth', authRouter);
 app.use('/api/me', meRouter);
+app.use('/api', guard.writeGuard); // /api/auth と /api/me はこの前で処理済み
 
 app.get(['/', '/index.html'], pageIndex);
 app.use(express.static(path.join(__dirname, 'public')));
@@ -107,59 +110,39 @@ app.use('/vendor/locales', express.static(path.join(__dirname, 'node_modules/@fu
 
 // ---- people ----
 app.get('/api/people', (req, res) => {
-  res.json(db.prepare('SELECT * FROM people ORDER BY id').all());
+  res.json(db.prepare(`SELECT p.*, EXISTS(SELECT 1 FROM users u WHERE u.person_id = p.id) AS claimed
+    FROM people p ORDER BY p.id`).all());
 });
 
-app.post('/api/people', upload.single('icon'), (req, res) => {
-  const name = (req.body.name || '').trim();
-  if (!name) return res.status(400).json({ error: '名前は必須です' });
-  const color = COLOR_RE.test(req.body.color) ? req.body.color : '#4f7cff';
-  const icon = req.file ? '/uploads/' + req.file.filename : null;
-  const r = db.prepare('INSERT INTO people (name, color, icon_path) VALUES (?, ?, ?)').run(name, color, icon);
-  res.status(201).json(db.prepare('SELECT * FROM people WHERE id = ?').get(r.lastInsertRowid));
-});
+// 人は登録時にだけ作る（POST はない）。変更は本人だけ。退会は POST /api/me/withdraw
+// 画像を受け取る前に所有者を検査する（拒否した画像がディスクに残らないように）
+app.put('/api/people/:id', (req, res, next) => (guard.mine(req, req.params.id) ? next() : guard.deny(res)),
+  upload.single('icon'), (req, res) => {
+    const p = db.prepare('SELECT * FROM people WHERE id = ?').get(req.params.id);
+    if (!p) return res.status(404).json({ error: 'not found' });
+    const name = (req.body.name || '').trim() || p.name;
+    const color = COLOR_RE.test(req.body.color) ? req.body.color : p.color;
+    // 古い画像は「元に戻す」で使うので消さない（使われなくなった画像は起動時に掃除する）
+    let icon = p.icon_path;
+    if (req.file) icon = '/uploads/' + req.file.filename;
+    else if (req.body.removeIcon === '1') icon = null;
+    db.prepare('UPDATE people SET name = ?, color = ?, icon_path = ? WHERE id = ?').run(name, color, icon, p.id);
+    res.json({ ...db.prepare('SELECT * FROM people WHERE id = ?').get(p.id), before: p });
+  });
 
-app.put('/api/people/:id', upload.single('icon'), (req, res) => {
-  const p = db.prepare('SELECT * FROM people WHERE id = ?').get(req.params.id);
-  if (!p) return res.status(404).json({ error: 'not found' });
-  const name = (req.body.name || '').trim() || p.name;
-  const color = COLOR_RE.test(req.body.color) ? req.body.color : p.color;
-  // 古い画像は「元に戻す」で使うので消さない（使われなくなった画像は起動時に掃除する）
-  let icon = p.icon_path;
-  if (req.file) icon = '/uploads/' + req.file.filename;
-  else if (req.body.removeIcon === '1') icon = null;
-  db.prepare('UPDATE people SET name = ?, color = ?, icon_path = ? WHERE id = ?').run(name, color, icon, p.id);
-  res.json({ ...db.prepare('SELECT * FROM people WHERE id = ?').get(p.id), before: p });
-});
-
-// 消した人・在室・メモをまとめて返す（「元に戻す」用）
-app.delete('/api/people/:id', (req, res) => {
-  const p = db.prepare('SELECT * FROM people WHERE id = ?').get(req.params.id);
-  if (!p) return res.status(404).json({ error: 'not found' });
-  const stays = db.prepare('SELECT * FROM stays WHERE person_id = ?').all(p.id);
-  const memos = db.prepare('SELECT * FROM memos WHERE person_id = ?').all(p.id);
-  db.prepare('DELETE FROM people WHERE id = ?').run(p.id);
-  res.json({ person: p, stays, memos });
-});
-
-// 「元に戻す」：人を同じ id で戻す（在室・メモも一緒に戻せる）
+// 「元に戻す」：自分の人の変更を元の値に戻す（削除済みの人は作り直さない）
 app.post('/api/people/restore', (req, res) => {
-  const { person, stays = [], memos = [] } = req.body || {};
+  const { person } = req.body || {};
   const name = typeof person?.name === 'string' ? person.name.trim() : '';
-  if (!Number.isInteger(person?.id) || !name || !COLOR_RE.test(person.color)
-    || !Array.isArray(stays) || !Array.isArray(memos)) {
+  if (!Number.isInteger(person?.id) || !name || !COLOR_RE.test(person.color)) {
     return res.status(400).json({ error: '入力が不正です' });
   }
+  if (!guard.mine(req, person.id)) return guard.deny(res);
+  if (!db.prepare('SELECT 1 FROM people WHERE id = ?').get(person.id)) return res.status(404).json({ error: 'not found' });
   // 画像は残っているときだけ使う
   const file = person.icon_path && path.join(UPLOAD_DIR, path.basename(String(person.icon_path)));
   const icon = file && fs.existsSync(file) ? '/uploads/' + path.basename(file) : null;
-  inTransaction(() => {
-    db.prepare(`INSERT INTO people (id, name, color, icon_path) VALUES (?, ?, ?, ?)
-      ON CONFLICT(id) DO UPDATE SET name = excluded.name, color = excluded.color, icon_path = excluded.icon_path`)
-      .run(person.id, name, person.color, icon);
-    restoreStays(stays);
-    restoreMemos(memos);
-  });
+  db.prepare('UPDATE people SET name = ?, color = ?, icon_path = ? WHERE id = ?').run(name, person.color, icon, person.id);
   res.json(db.prepare('SELECT * FROM people WHERE id = ?').get(person.id));
 });
 
@@ -209,6 +192,7 @@ app.get('/api/stays', (req, res) => {
 app.post('/api/stays', (req, res) => {
   const b = req.body;
   if (!validStay(b)) return res.status(400).json({ error: '入力が不正です' });
+  if (!guard.mine(req, b.person_id)) return guard.deny(res);
   if (!db.prepare('SELECT 1 FROM people WHERE id = ?').get(b.person_id)) return res.status(400).json({ error: '人が存在しません' });
   const r = db.prepare('INSERT INTO stays (person_id, start, end, note) VALUES (?, ?, ?, ?)')
     .run(b.person_id, b.start, b.end, b.note || '');
@@ -224,6 +208,7 @@ app.post('/api/stays/batch', (req, res) => {
     || !TIME_RE.test(startTime) || !TIME_RE.test(endTime) || startTime >= endTime) {
     return res.status(400).json({ error: '入力が不正です' });
   }
+  if (!guard.mine(req, person_id)) return guard.deny(res);
   if (!db.prepare('SELECT 1 FROM people WHERE id = ?').get(person_id)) return res.status(400).json({ error: '人が存在しません' });
   const insert = db.prepare('INSERT INTO stays (person_id, start, end, note) VALUES (?, ?, ?, ?)');
   const ids = [];
@@ -242,6 +227,7 @@ app.post('/api/stays/import', (req, res) => {
       && it.start.slice(0, 10) === it.end.slice(0, 10))) {
     return res.status(400).json({ error: '入力が不正です' });
   }
+  if (!guard.mine(req, person_id)) return guard.deny(res);
   if (!db.prepare('SELECT 1 FROM people WHERE id = ?').get(person_id)) return res.status(400).json({ error: '人が存在しません' });
   const exists = db.prepare('SELECT 1 FROM stays WHERE person_id = ? AND start = ? AND end = ?');
   const insert = db.prepare('INSERT INTO stays (person_id, start, end, note) VALUES (?, ?, ?, ?)');
@@ -259,8 +245,10 @@ app.post('/api/stays/import', (req, res) => {
 app.put('/api/stays/:id', (req, res) => {
   const s = db.prepare('SELECT * FROM stays WHERE id = ?').get(req.params.id);
   if (!s) return res.status(404).json({ error: 'not found' });
+  if (!guard.mine(req, s.person_id)) return guard.deny(res);
   const b = { ...s, ...req.body };
   if (!validStay(b)) return res.status(400).json({ error: '入力が不正です' });
+  if (!guard.mine(req, b.person_id)) return guard.deny(res); // 他人への付け替えは不可
   if (!db.prepare('SELECT 1 FROM people WHERE id = ?').get(b.person_id)) return res.status(400).json({ error: '人が存在しません' });
   db.prepare('UPDATE stays SET person_id = ?, start = ?, end = ?, note = ? WHERE id = ?')
     .run(b.person_id, b.start, b.end, b.note || '', s.id);
@@ -271,6 +259,7 @@ app.put('/api/stays/:id', (req, res) => {
 app.delete('/api/stays/:id', (req, res) => {
   const s = db.prepare('SELECT * FROM stays WHERE id = ?').get(req.params.id);
   if (!s) return res.status(204).end();
+  if (!guard.mine(req, s.person_id)) return guard.deny(res);
   db.prepare('DELETE FROM stays WHERE id = ?').run(s.id);
   res.json(s);
 });
@@ -278,6 +267,7 @@ app.delete('/api/stays/:id', (req, res) => {
 app.post('/api/stays/remove', (req, res) => {
   const { ids } = req.body || {};
   if (!validIds(ids)) return res.status(400).json({ error: '入力が不正です' });
+  if (!guard.staysAllMine(req, ids)) return guard.deny(res); // 他人のものが 1件でもあれば何も消さない
   const del = db.prepare('DELETE FROM stays WHERE id = ?');
   inTransaction(() => ids.forEach((id) => del.run(id)));
   res.status(204).end();
@@ -286,6 +276,10 @@ app.post('/api/stays/remove', (req, res) => {
 app.post('/api/stays/restore', (req, res) => {
   const { items } = req.body || {};
   if (!Array.isArray(items) || !items.length || items.length > 1000) return res.status(400).json({ error: '入力が不正です' });
+  // 書き戻す先が自分の人で、同じ id の既存の行も自分のものであること
+  if (!items.every((it) => guard.mine(req, it?.person_id)) || !guard.staysAllMine(req, items.map((it) => it?.id))) {
+    return guard.deny(res);
+  }
   inTransaction(() => restoreStays(items));
   res.status(204).end();
 });
@@ -322,6 +316,7 @@ app.post('/api/memos/batch', (req, res) => {
     || !items.every((it) => it && validMemoRange(allDay, it.start, it.end))) {
     return res.status(400).json({ error: '入力が不正です' });
   }
+  if (!guard.memoOk(req, personId)) return guard.deny(res);
   if (!memoTargetOk(personId)) return res.status(400).json({ error: '人が存在しません' });
   const insert = db.prepare('INSERT INTO memos (person_id, title, all_day, start, end) VALUES (?, ?, ?, ?, ?)');
   const ids = [];
@@ -334,12 +329,14 @@ app.post('/api/memos/batch', (req, res) => {
 app.put('/api/memos/:id', (req, res) => {
   const m = db.prepare('SELECT * FROM memos WHERE id = ?').get(req.params.id);
   if (!m) return res.status(404).json({ error: 'not found' });
+  if (!guard.memoOk(req, m.person_id)) return guard.deny(res);
   const b = { ...m, ...req.body };
   const title = String(b.title ?? '').trim();
   const allDay = b.all_day ? 1 : 0;
   const personId = b.person_id ?? null;
   if (!title || title.length > 100) return res.status(400).json({ error: '内容を入力してください（100字まで）' });
   if (!validMemoRange(allDay, b.start, b.end)) return res.status(400).json({ error: '入力が不正です' });
+  if (!guard.memoOk(req, personId)) return guard.deny(res); // 他人の人への付け替えは不可
   if (!memoTargetOk(personId)) return res.status(400).json({ error: '人が存在しません' });
   db.prepare('UPDATE memos SET person_id = ?, title = ?, all_day = ?, start = ?, end = ? WHERE id = ?')
     .run(personId, title, allDay, b.start, b.end, m.id);
@@ -349,6 +346,7 @@ app.put('/api/memos/:id', (req, res) => {
 app.delete('/api/memos/:id', (req, res) => {
   const m = db.prepare('SELECT * FROM memos WHERE id = ?').get(req.params.id);
   if (!m) return res.status(204).end();
+  if (!guard.memoOk(req, m.person_id)) return guard.deny(res);
   db.prepare('DELETE FROM memos WHERE id = ?').run(m.id);
   res.json(m);
 });
@@ -356,6 +354,7 @@ app.delete('/api/memos/:id', (req, res) => {
 app.post('/api/memos/remove', (req, res) => {
   const { ids } = req.body || {};
   if (!validIds(ids)) return res.status(400).json({ error: '入力が不正です' });
+  if (!guard.memosAllOk(req, ids)) return guard.deny(res);
   const del = db.prepare('DELETE FROM memos WHERE id = ?');
   inTransaction(() => ids.forEach((id) => del.run(id)));
   res.status(204).end();
@@ -364,6 +363,9 @@ app.post('/api/memos/remove', (req, res) => {
 app.post('/api/memos/restore', (req, res) => {
   const { items } = req.body || {};
   if (!Array.isArray(items) || !items.length || items.length > 1000) return res.status(400).json({ error: '入力が不正です' });
+  if (!items.every((it) => guard.memoOk(req, it?.person_id ?? null)) || !guard.memosAllOk(req, items.map((it) => it?.id))) {
+    return guard.deny(res);
+  }
   inTransaction(() => restoreMemos(items));
   res.status(204).end();
 });
