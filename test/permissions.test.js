@@ -2,7 +2,7 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
-const { startServer, Client, registerUser } = require('./helpers');
+const { startServer, Client, registerUser, waitFor } = require('./helpers');
 
 // A と B がログイン済み、U は誰も紐付けていない既存の人
 async function setup(t) {
@@ -259,4 +259,69 @@ test('restore: 今までに使われていない大きな id では書き戻せ�
   assert.equal(r2.json.error, '入力が不正です');
   assert.equal((await a.post('/api/memos/batch', memo(A))).status, 201);
   assert.equal((await anon.get('/api/memos')).status, 200);
+});
+
+// ---- 最終レビュー対応 ----
+
+test('人: 他人の人への multipart PUT は、画像つきでも 403 で、画像がディスクに残らない（本人なら保存される）', async (t) => {
+  const { srv, a, A, B, anon } = await setup(t);
+  const dir = path.join(srv.dataDir, 'uploads');
+  const before = fs.readdirSync(dir);
+  const form = (name) => {
+    const fd = new FormData();
+    fd.append('name', name);
+    fd.append('icon', new Blob([Uint8Array.from([0x89, 0x50, 0x4e, 0x47])], { type: 'image/png' }), 'icon.png');
+    return fd;
+  };
+
+  assert.equal((await a.putMultipart(`/api/people/${B}`, form('乗っ取り'))).status, 403);
+  assert.equal((await anon.putMultipart(`/api/people/${A}`, form('未ログイン'))).status, 401);
+  assert.deepEqual(fs.readdirSync(dir), before);
+  const names = (await a.get('/api/people')).json.map((p) => p.name);
+  assert.ok(!names.includes('乗っ取り') && !names.includes('未ログイン'));
+
+  // 対照：本人の multipart PUT は通り、画像が 1つ増える（上の「増えていない」が見落としでないことの確認）
+  const ok = await a.putMultipart(`/api/people/${A}`, form('A改'));
+  assert.equal(ok.status, 200);
+  assert.equal(ok.json.name, 'A改');
+  assert.equal(fs.readdirSync(dir).length, before.length + 1);
+});
+
+test('人: PUT の本文がない・オブジェクトでないときは、内部のエラー文ではなく 400', async (t) => {
+  const { a, A } = await setup(t);
+  const noBody = await a.request('PUT', `/api/people/${A}`); // Content-Type も本文もない
+  assert.equal(noBody.status, 400);
+  assert.equal(noBody.json.error, '送信内容が正しくありません');
+  const arr = await a.put(`/api/people/${A}`, []);
+  assert.equal(arr.status, 400);
+  assert.equal(arr.json.error, '送信内容が正しくありません');
+  // 名前が文字列でなければ無視する（TypeError にしない）
+  const obj = await a.put(`/api/people/${A}`, { name: { x: 1 }, color: ['#000000'] });
+  assert.equal(obj.status, 200);
+  assert.equal(obj.json.name, 'A');
+  assert.equal(obj.json.color, '#4f7cff');
+  // restore も、文字列でない色は 400（配列が文字列に変換されて通り、DB への受け渡しで落ちない）
+  const rs = await a.post('/api/people/restore', { person: { id: A, name: 'A', color: ['#000000'] } });
+  assert.equal(rs.status, 400);
+  assert.equal(rs.json.error, '入力が不正です');
+});
+
+test('壊れた JSON や予期しないエラーでは、英語・SQLite の内部のエラー文を返さず、ログにだけ残す', async (t) => {
+  const { srv, a, A } = await setup(t);
+  const broken = await fetch(srv.base + '/api/stays', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', cookie: [...a.jar].map(([k, v]) => `${k}=${v}`).join('; ') },
+    body: '{"person_id": ',
+  });
+  assert.equal(broken.status, 400);
+  assert.equal((await broken.json()).error, '送信内容が正しくありません');
+
+  // note がオブジェクトだと、DB へ渡す段階で失敗する（予期しないエラー）
+  const r = await a.post('/api/stays', stay(A, { note: { x: 1 } }));
+  assert.equal(r.status, 500);
+  assert.equal(r.json.error, 'サーバーでエラーが起きました');
+  assert.doesNotMatch(r.text, /SQLite|bind/i);
+  await waitFor(() => /SQLite|bind/i.test(srv.output()), 'error log');
+  // 意図して返している入力エラーはそのまま
+  assert.equal((await a.post('/api/stays', { ...stay(A), start: '2030-01-05T18:00:00', end: '2030-01-05T09:00:00' })).json.error, '入力が不正です');
 });

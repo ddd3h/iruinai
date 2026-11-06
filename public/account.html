@@ -53,6 +53,7 @@
       <p class="hint" id="codeSent"></p>
       <label>メールアドレス<input type="email" name="email" required autocomplete="username"></label>
       <label>6桁のコード<input type="text" name="code" inputmode="numeric" pattern="[0-9]{6}" maxlength="6" required autocomplete="one-time-code"></label>
+      <label>パスワード（登録のときに決めたもの）<input type="password" name="password" id="codePassword" required maxlength="128" autocomplete="current-password"></label>
       <p class="error" data-error></p>
       <button type="submit" class="btn primary wide">登録する</button>
       <p class="account-links">

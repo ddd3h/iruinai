@@ -67,6 +67,16 @@ test('account.js が参照する要素は account.html にある', () => {
   };
   // 確認コードの画面は自分のメール欄を持つ（画面を離れても、コード入力に戻れるように）
   assert.match(block('view-code'), /name="email"/);
+  // 確認コードの画面はパスワードも持つ（verify はサインアップ時のパスワードを要求する）
+  const pw = block('view-code').match(/<input[^>]*id="codePassword"[^>]*>/);
+  assert.ok(pw, 'view-code に id="codePassword" の入力がない');
+  assert.match(pw[0], /name="password"/);
+  assert.match(pw[0], /type="password"/);
+  assert.match(pw[0], /autocomplete="current-password"/);
+  assert.match(pw[0], /\brequired\b/);
+  // パスワードは変数に持つだけで、ブラウザの保存領域には書かない（sessionStorage にはメールアドレスだけ）
+  assert.doesNotMatch(js, /(?:session|local)Storage\.setItem\([^)]*assword/i);
+  assert.match(js, /post\('\/api\/auth\/verify', \{[^}]*password:/);
   // 登録の画面とログインの画面から、確認コードの入力へ行ける
   assert.match(block('view-signup'), /data-go="code"/);
   assert.match(block('view-login'), /data-go="code"/);

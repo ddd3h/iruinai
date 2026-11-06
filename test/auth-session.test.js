@@ -51,7 +51,8 @@ test('PW リセット: 1回限り。使うと既存のセッションが全部�
   t.after(() => srv.stop());
   const old = await registerUser(srv, { email: 'a@example.com', password: 'old-password', person: { new_name: 'A' } });
   const other = new Client(srv.base);
-  await other.post('/api/auth/login', { email: 'a@example.com', password: 'old-password' });
+  assert.equal((await other.post('/api/auth/login', { email: 'a@example.com', password: 'old-password' })).status, 200);
+  assert.ok((await other.get('/api/me')).json.user); // リセット前は、この端末もログイン中
 
   const c = new Client(srv.base);
   const f = await c.post('/api/auth/forgot', { email: 'A@example.com' });

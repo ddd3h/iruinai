@@ -33,14 +33,16 @@ async function waitFor(fn, what, ms = 5000) {
 // 起動に失敗したら、子プロセスを止め、一時ディレクトリを消してから reject する
 // （呼び出し側は成功した後でしか srv.stop() を登録できないため）。
 // reject する Error には、確認用に pid と dataDir を付ける。
-// startTimeout は起動待ちの上限（ミリ秒）。テストで失敗経路を速く確かめるために変えられる
-async function startServer(extraEnv = {}, { startTimeout = 5000 } = {}) {
+// startTimeout は起動待ちの上限（ミリ秒）。テストで失敗経路を速く確かめるために変えられる。
+// seed(dataDir) は起動前に呼ばれ、DATA_DIR に古い形式の app.db などを置くのに使える
+async function startServer(extraEnv = {}, { startTimeout = 5000, seed } = {}) {
   const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'iruinai-test-'));
   let port;
   let child;
   let exited;
   let out = '';
   try {
+    if (seed) seed(dataDir); // 起動前に app.db などを用意する（古い形式の DB の確認用）
     port = await freePort();
     const env = {
       ...process.env,
@@ -122,7 +124,9 @@ class Client {
     if (this.jar.size) headers.cookie = [...this.jar].map(([k, v]) => `${k}=${v}`).join('; ');
     let payload;
     if (body !== undefined) {
-      if (form) {
+      if (body instanceof FormData) {
+        payload = body; // multipart。content-type（boundary つき）は fetch が付ける
+      } else if (form) {
         headers['content-type'] = 'application/x-www-form-urlencoded';
         payload = new URLSearchParams(body).toString();
       } else {
@@ -151,6 +155,7 @@ class Client {
   put(url, body = {}) { return this.request('PUT', url, body); }
   del(url) { return this.request('DELETE', url); }
   postForm(url, body) { return this.request('POST', url, body, { form: true }); }
+  putMultipart(url, formData) { return this.request('PUT', url, formData); }
 }
 
 // 登録 → コード確認までを API で行い、ログイン済みの Client を返す
@@ -162,7 +167,7 @@ async function registerUser(srv, { email, password = 'password123', person }) {
   assert.equal(r.status, 200, JSON.stringify(r.json));
   const mail = await srv.waitMail(email.trim().toLowerCase(), before + 1);
   const code = mail.text.match(/確認コード: (\d{6})/)[1];
-  const v = await c.post('/api/auth/verify', { email, code });
+  const v = await c.post('/api/auth/verify', { email, code, password });
   assert.equal(v.status, 200, JSON.stringify(v.json));
   c.user = v.json.user;
   return c;

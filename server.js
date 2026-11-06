@@ -29,6 +29,8 @@ function removeIcon(iconPath) {
 }
 
 const COLOR_RE = /^#[0-9a-fA-F]{6}$/;
+// 画面にそのまま見せてよい入力エラー。これ以外の予期しないエラーは、中身を返さずログにだけ残す（末尾のエラー処理）
+class InputError extends Error {}
 const { createGuard } = require('./lib/guard');
 const guard = createGuard(db);
 const app = express();
@@ -120,14 +122,16 @@ app.get('/api/people', (req, res) => {
 // 画像を受け取る前に所有者を検査する（拒否した画像がディスクに残らないように）
 app.put('/api/people/:id', (req, res, next) => (guard.mine(req, req.params.id) ? next() : guard.deny(res)),
   upload.single('icon'), (req, res) => {
+    const body = req.body;
+    if (!body || typeof body !== 'object' || Array.isArray(body)) return res.status(400).json({ error: '送信内容が正しくありません' });
     const p = db.prepare('SELECT * FROM people WHERE id = ?').get(req.params.id);
     if (!p) return res.status(404).json({ error: 'not found' });
-    const name = (req.body.name || '').trim() || p.name;
-    const color = COLOR_RE.test(req.body.color) ? req.body.color : p.color;
+    const name = (typeof body.name === 'string' ? body.name.trim() : '') || p.name;
+    const color = typeof body.color === 'string' && COLOR_RE.test(body.color) ? body.color : p.color;
     // 古い画像は「元に戻す」で使うので消さない（使われなくなった画像は起動時に掃除する）
     let icon = p.icon_path;
     if (req.file) icon = '/uploads/' + req.file.filename;
-    else if (req.body.removeIcon === '1') icon = null;
+    else if (body.removeIcon === '1') icon = null;
     db.prepare('UPDATE people SET name = ?, color = ?, icon_path = ? WHERE id = ?').run(name, color, icon, p.id);
     res.json({ ...db.prepare('SELECT * FROM people WHERE id = ?').get(p.id), before: p });
   });
@@ -136,7 +140,7 @@ app.put('/api/people/:id', (req, res, next) => (guard.mine(req, req.params.id) ?
 app.post('/api/people/restore', (req, res) => {
   const { person } = req.body || {};
   const name = typeof person?.name === 'string' ? person.name.trim() : '';
-  if (!Number.isInteger(person?.id) || !name || !COLOR_RE.test(person.color)) {
+  if (!Number.isInteger(person?.id) || !name || typeof person.color !== 'string' || !COLOR_RE.test(person.color)) {
     return res.status(400).json({ error: '入力が不正です' });
   }
   if (!guard.mine(req, person.id)) return guard.deny(res);
@@ -156,8 +160,8 @@ function restoreStays(items) {
   const upsert = db.prepare(`INSERT INTO stays (id, person_id, start, end, note) VALUES (?, ?, ?, ?, ?)
     ON CONFLICT(id) DO UPDATE SET person_id = excluded.person_id, start = excluded.start, end = excluded.end, note = excluded.note`);
   for (const s of items) {
-    if (!Number.isInteger(s?.id) || !validStay(s)) throw new Error('入力が不正です');
-    if (!db.prepare('SELECT 1 FROM people WHERE id = ?').get(s.person_id)) throw new Error('人が存在しません');
+    if (!Number.isInteger(s?.id) || !validStay(s)) throw new InputError('入力が不正です');
+    if (!db.prepare('SELECT 1 FROM people WHERE id = ?').get(s.person_id)) throw new InputError('人が存在しません');
     upsert.run(s.id, s.person_id, s.start, s.end, String(s.note || ''));
   }
 }
@@ -170,8 +174,8 @@ function restoreMemos(items) {
     const title = String(m?.title ?? '').trim();
     const allDay = m?.all_day ? 1 : 0;
     const personId = m?.person_id ?? null;
-    if (!Number.isInteger(m?.id) || !title || title.length > 100 || !validMemoRange(allDay, m.start, m.end)) throw new Error('入力が不正です');
-    if (!memoTargetOk(personId)) throw new Error('人が存在しません');
+    if (!Number.isInteger(m?.id) || !title || title.length > 100 || !validMemoRange(allDay, m.start, m.end)) throw new InputError('入力が不正です');
+    if (!memoTargetOk(personId)) throw new InputError('人が存在しません');
     upsert.run(m.id, personId, title, allDay, m.start, m.end);
   }
 }
@@ -384,8 +388,13 @@ app.post('/api/memos/restore', (req, res) => {
 });
 
 app.use((err, req, res, next) => {
-  const msg = err.code === 'LIMIT_FILE_SIZE' ? '画像は2MBまでです' : err.message;
-  res.status(400).json({ error: msg });
+  if (res.headersSent) return next(err);
+  if (err.code === 'LIMIT_FILE_SIZE') return res.status(400).json({ error: '画像は2MBまでです' });
+  if (err instanceof InputError) return res.status(400).json({ error: err.message });
+  // 壊れた JSON・不正なアップロードなど、リクエストの形そのものの誤り（英語の技術的な文面は返さない）
+  if (err instanceof multer.MulterError || (err.status >= 400 && err.status < 500)) return res.status(400).json({ error: '送信内容が正しくありません' });
+  console.error(err);
+  res.status(500).json({ error: 'サーバーでエラーが起きました' });
 });
 
 // ---- 起動時: 既存アイコンを 144px の WebP に縮小 ----

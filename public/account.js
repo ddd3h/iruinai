@@ -18,6 +18,10 @@
     } catch { /* 保存できなくても、このページの中では覚えている */ }
   }
 
+  // 登録で入れたパスワードは、このページを開いている間だけ変数に持つ（確認コードの画面に入れておくため）。
+  // sessionStorage / localStorage には絶対に残さない。再読み込みしたら消えるので、そのときは入力し直してもらう
+  let signupPassword = '';
+
   // fresh は「いま登録して、確認メールを送った直後」のとき true（そうでなければ、メールを送ったとは言わない）
   function show(name, fresh = false) {
     for (const v of views) v.hidden = v.id !== 'view-' + name;
@@ -29,7 +33,8 @@
       if (saved) cur.email.value = saved;
       $('#codeSent').textContent = fresh && saved
         ? `${saved} に6桁のコードを送りました（10分間有効）。`
-        : '届いた6桁のコードを入力してください（10分間有効）。';
+        : '届いた6桁のコードと、登録のときに決めたパスワードを入力してください（10分間有効）。';
+      if (signupPassword && !$('#codePassword').value) $('#codePassword').value = signupPassword;
       if (cur.email.value) first = cur.code; // メールが入っていれば、コードの欄から始める
     }
     first?.focus();
@@ -119,15 +124,19 @@
     else { body.new_name = f.new_name.value; body.new_color = f.new_color.value; }
     await post('/api/auth/signup', body);
     setPending(f.email.value.trim());
+    signupPassword = f.password.value;
     $('#view-code').code.value = '';
+    $('#codePassword').value = signupPassword;
     show('code', true);
     startCountdown();
   });
 
   // コード確認
   onSubmit('code', async (f) => {
-    await post('/api/auth/verify', { email: f.email.value.trim(), code: f.code.value });
+    await post('/api/auth/verify', { email: f.email.value.trim(), code: f.code.value, password: f.password.value });
     setPending('');
+    signupPassword = '';
+    f.password.value = '';
     location.href = '/';
   });
   $('#resendBtn').addEventListener('click', async () => {
