@@ -95,7 +95,12 @@ async function startServer(extraEnv = {}, { startTimeout = 5000 } = {}) {
       const list = mails().filter((m) => m.to === to);
       return list[list.length - 1];
     },
-    openDb: () => new DatabaseSync(path.join(dataDir, 'app.db')),
+    // サーバーも起動直後に書き込む（期限切れの行の掃除）ので、ロックされていたら待つ
+    openDb() {
+      const db = new DatabaseSync(path.join(dataDir, 'app.db'));
+      db.exec('PRAGMA busy_timeout = 5000');
+      return db;
+    },
     async stop() {
       child.kill();
       await exited;

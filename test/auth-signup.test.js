@@ -5,14 +5,6 @@ const { verifyPassword } = require('../lib/secrets');
 
 const codeOf = (mail) => mail.text.match(/確認コード: (\d{6})/)[1];
 
-// 起動した直後はサーバーが期限切れの行を消す書き込みをしていて、DB がロックされていることがある。
-// 起動直後に書き込むテストは、ロックが外れるまで待つ（待たないと "database is locked" で不定期に落ちる）
-const openDbWaiting = (srv) => {
-  const db = srv.openDb();
-  db.exec('PRAGMA busy_timeout = 5000');
-  return db;
-};
-
 test('新しい人で登録 → コード確認 → ログイン状態になる（メールは小文字化される）', async (t) => {
   const srv = await startServer();
   t.after(() => srv.stop());
@@ -58,7 +50,7 @@ test('Cookie は HttpOnly・SameSite=Lax で、DB にはトークンの hash だ
 test('既存の未紐付けの人を選んで登録できる。紐付け済みの人は選べない', async (t) => {
   const srv = await startServer();
   t.after(() => srv.stop());
-  const db = openDbWaiting(srv);
+  const db = srv.openDb();
   const pid = Number(db.prepare("INSERT INTO people (name, color) VALUES ('既存', '#abcdef')").run().lastInsertRowid);
   db.close();
 
@@ -159,7 +151,7 @@ test('再送は 60秒空ける。再送すると古いコードは使えず、�
 test('同じ既存の人を 2人が選んだら、先に確認した 1人だけ成功する', async (t) => {
   const srv = await startServer();
   t.after(() => srv.stop());
-  const db = openDbWaiting(srv);
+  const db = srv.openDb();
   const pid = Number(db.prepare("INSERT INTO people (name, color) VALUES ('既存', '#abcdef')").run().lastInsertRowid);
   db.close();
 
