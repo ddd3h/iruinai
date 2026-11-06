@@ -11,6 +11,7 @@ const multer = require('multer');
 const crypto = require('crypto');
 const { db, UPLOAD_DIR, inTransaction } = require('./lib/db');
 const { readCookie } = require('./lib/cookies');
+const { authRouter, meRouter, attachUser, cleanup: cleanupAuth, destroySession, mailMode } = require('./lib/auth');
 
 const ALLOWED_EXT = { 'image/png': '.png', 'image/jpeg': '.jpg', 'image/gif': '.gif', 'image/webp': '.webp' };
 const upload = multer({
@@ -81,7 +82,8 @@ if (PASSWORD) {
   });
 
   app.get('/logout', (req, res) => {
-    res.setHeader('Set-Cookie', `${COOKIE}=; Max-Age=0; Path=/; HttpOnly; SameSite=Lax`);
+    destroySession(req, res); // セッションの行と Cookie を消す
+    res.append('Set-Cookie', `${COOKIE}=; Max-Age=0; Path=/; HttpOnly; SameSite=Lax`);
     res.redirect(303, '/login');
   });
 
@@ -91,6 +93,11 @@ if (PASSWORD) {
     res.redirect(303, '/login');
   });
 }
+
+// ---- アカウント ----
+app.use(attachUser);
+app.use('/api/auth', authRouter);
+app.use('/api/me', meRouter);
 
 app.get(['/', '/index.html'], pageIndex);
 app.use(express.static(path.join(__dirname, 'public')));
@@ -415,6 +422,9 @@ const PORT = process.env.PORT || 3000;
 app.listen(PORT, '0.0.0.0', () => {
   console.log(`在室カレンダー: http://localhost:${PORT}`);
   console.log(PASSWORD ? '合言葉: 有効' : '合言葉: 無効（ROOM_PASSWORD 未設定）');
+  console.log(mailMode() === 'smtp' ? 'メール: SMTP で送信' : 'メール: コンソール出力（SMTP_HOST 未設定）');
+  if (mailMode() === 'smtp' && !PUBLIC_URL) console.warn('警告: PUBLIC_URL が未設定です。PW リセットの URL が Host ヘッダーから作られます。.env で PUBLIC_URL を設定してください');
+  cleanupAuth();
   removeUnusedIcons();
   shrinkExistingIcons().catch((err) => console.log('アイコンの縮小に失敗:', err.message));
 });
