@@ -437,7 +437,7 @@ body.locked .fc-event { cursor: default; }
   .minical-foot .hint { font-size: 11px; }
   dialog { padding: 16px; max-height: calc(100dvh - 32px); }
   dialog select,
-  dialog input[type=text], dialog input[type=date], dialog input[type=time] { font-size: 16px; padding: 10px; }
+  dialog input[type=text], dialog input[type=password], dialog input[type=date], dialog input[type=time] { font-size: 16px; padding: 10px; }
   .actions .btn { padding: 10px 14px; }
 }
 

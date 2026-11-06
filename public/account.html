@@ -20,6 +20,7 @@
         <button type="button" class="btn link" data-go="forgot">パスワードを忘れた</button>
         <button type="button" class="btn link" data-go="signup">新規登録</button>
       </p>
+      <p class="account-links"><button type="button" class="btn link" data-go="code">確認コードを入力する</button></p>
       <p class="account-links"><a href="/">ログインせずに見る（閲覧のみ）</a></p>
     </form>
 
@@ -35,18 +36,22 @@
           <label>名前<input type="text" name="new_name" maxlength="20"></label>
           <label>色<input type="color" name="new_color" value="#4f7cff"></label>
         </div>
-        <label class="check" id="existingLabel"><input type="radio" name="mode" value="existing"> すでにある人を選ぶ</label>
-        <select name="person_id" id="existingSelect" disabled></select>
-        <p class="hint" id="existingHint">まだ誰も使っていない人だけ選べます。選ぶと、今ある予定とメモを引き継げます</p>
+        <label class="check" id="existingLabel" hidden><input type="radio" name="mode" value="existing"> すでにある人を選ぶ</label>
+        <select name="person_id" id="existingSelect" disabled hidden></select>
+        <p class="hint" id="existingHint" hidden>まだ誰も使っていない人だけ選べます。選ぶと、今ある予定とメモを引き継げます</p>
       </fieldset>
       <p class="error" data-error></p>
       <button type="submit" class="btn primary wide">確認メールを送る</button>
-      <p class="account-links"><button type="button" class="btn link" data-go="login">ログインに戻る</button></p>
+      <p class="account-links">
+        <button type="button" class="btn link" data-go="login">ログインに戻る</button>
+        <button type="button" class="btn link" data-go="code">確認コードを入力する</button>
+      </p>
     </form>
 
     <form id="view-code" hidden>
       <h2>確認コード</h2>
       <p class="hint" id="codeSent"></p>
+      <label>メールアドレス<input type="email" name="email" required autocomplete="username"></label>
       <label>6桁のコード<input type="text" name="code" inputmode="numeric" pattern="[0-9]{6}" maxlength="6" required autocomplete="one-time-code"></label>
       <p class="error" data-error></p>
       <button type="submit" class="btn primary wide">登録する</button>

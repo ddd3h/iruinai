@@ -1,5 +1,7 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const path = require('node:path');
 const { startServer, Client } = require('./helpers');
 
 test('/account と /reset は同じ画面を返す', async (t) => {
@@ -20,4 +22,52 @@ test('合言葉を通っていなければ /account は合言葉の画面へ', a
   const r = await new Client(srv.base).get('/account');
   assert.equal(r.status, 303);
   assert.equal(r.headers.get('location'), '/login');
+});
+
+test('合言葉を通ったあとは /account も /reset も開ける', async (t) => {
+  const srv = await startServer({ ROOM_PASSWORD: 'himitsu' });
+  t.after(() => srv.stop());
+  const c = new Client(srv.base);
+  assert.equal((await c.postForm('/login', { password: 'himitsu' })).status, 303);
+  for (const url of ['/account', '/reset?token=abc']) {
+    const r = await c.get(url);
+    assert.equal(r.status, 200, url);
+    assert.match(r.text, /<script src="\/account\.js">/);
+  }
+  // Cookie を持たない人は、どちらも合言葉の画面へ
+  for (const url of ['/account', '/reset?token=abc']) {
+    const r = await new Client(srv.base).get(url);
+    assert.equal(r.status, 303, url);
+    assert.equal(r.headers.get('location'), '/login', url);
+  }
+});
+
+// ブラウザで動かせないので、account.js が触る要素が account.html に揃っているかを文字列で突き合わせる
+test('account.js が参照する要素は account.html にある', () => {
+  const dir = path.join(__dirname, '../public');
+  const html = fs.readFileSync(path.join(dir, 'account.html'), 'utf8');
+  const js = fs.readFileSync(path.join(dir, 'account.js'), 'utf8');
+  const htmlIds = new Set([...html.matchAll(/\bid="([^"]+)"/g)].map((m) => m[1]));
+
+  // '#id' のセレクタ（'#view-' + name のような途中の文字列は除く）と getElementById('id')
+  const wanted = new Set();
+  for (const m of js.matchAll(/['"`]#([\w-]+)/g)) if (!m[1].endsWith('-')) wanted.add(m[1]);
+  for (const m of js.matchAll(/getElementById\('([\w-]+)'\)/g)) wanted.add(m[1]);
+  // show('name') / onSubmit('name') と data-go="name" は #view-name を指す
+  for (const m of js.matchAll(/\b(?:show|onSubmit)\('(\w+)'/g)) wanted.add('view-' + m[1]);
+  for (const m of html.matchAll(/\bdata-go="(\w+)"/g)) wanted.add('view-' + m[1]);
+
+  assert.ok(wanted.size >= 10, `突き合わせる id が少なすぎる（正規表現の取りこぼし？）: ${[...wanted]}`);
+  for (const id of wanted) assert.ok(htmlIds.has(id), `account.html に id="${id}" がない`);
+
+  const block = (id) => {
+    const m = html.match(new RegExp(`<form id="${id}"[\\s\\S]*?</form>`));
+    assert.ok(m, `<form id="${id}"> がない`);
+    return m[0];
+  };
+  // 確認コードの画面は自分のメール欄を持つ（画面を離れても、コード入力に戻れるように）
+  assert.match(block('view-code'), /name="email"/);
+  // 登録の画面とログインの画面から、確認コードの入力へ行ける
+  assert.match(block('view-signup'), /data-go="code"/);
+  assert.match(block('view-login'), /data-go="code"/);
 });
