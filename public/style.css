@@ -279,7 +279,7 @@ dialog::backdrop { background: rgba(0,0,0,.35); }
 dialog h2 { margin: 0 0 12px; font-size: 18px; }
 dialog label { display: block; font-size: 13px; color: var(--muted); margin: 10px 0 4px; }
 dialog select,
-dialog input[type=text], dialog input[type=date], dialog input[type=time] {
+dialog input[type=text], dialog input[type=password], dialog input[type=date], dialog input[type=time] {
   display: block;
   width: 100%;
   margin-top: 4px;
@@ -522,3 +522,23 @@ kbd {
   .fc-event.kb-event-focus { outline: 3px solid #1f2328; outline-offset: 1px; z-index: 6; }
 }
 @media (max-width: 600px), print { .kb-badge { display: none !important; } }
+
+/* アカウント画面（ログイン・登録・パスワード再設定） */
+body.account-page { min-height: 100vh; display: flex; align-items: center; justify-content: center; padding: 16px; }
+.account-card { width: 100%; max-width: 380px; background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 24px; }
+.account-card h1 { font-size: 20px; margin: 0 0 12px; }
+.account-card h2 { font-size: 16px; margin: 0 0 12px; }
+.account-card label { display: block; font-size: 13px; color: var(--muted); margin: 10px 0 4px; }
+.account-card input:not([type=radio]):not([type=color]), .account-card select {
+  display: block; width: 100%; margin-top: 4px; padding: 10px 12px; font-size: 16px;
+  border: 1px solid var(--border); border-radius: 8px; background: var(--surface); color: var(--text);
+}
+.account-card input[type=color] { display: block; margin-top: 4px; width: 60px; height: 34px; border: none; padding: 0; }
+.account-card input:focus, .account-card select:focus { outline: 2px solid var(--primary); outline-offset: -1px; border-color: var(--primary); }
+.account-card label.check { display: flex; align-items: center; gap: 8px; color: var(--text); font-size: 14px; }
+.account-card fieldset { border: 1px solid var(--border); border-radius: 8px; margin: 14px 0 0; padding: 4px 12px 12px; }
+.account-card legend { font-size: 13px; color: var(--muted); padding: 0 4px; }
+.account-card .btn.wide { width: 100%; margin-top: 16px; padding: 10px; font-size: 16px; font-weight: 600; }
+.account-card .btn:disabled { opacity: .5; cursor: default; }
+.account-links { display: flex; justify-content: space-between; margin: 12px 0 0; font-size: 13px; }
+.account-links a { color: var(--muted); }

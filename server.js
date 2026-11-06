@@ -63,6 +63,7 @@ function sendPage(file) {
 }
 const pageIndex = sendPage('index.html');
 const pageLogin = sendPage('login.html');
+const pageAccount = sendPage('account.html');
 
 // SNS のプレビュー用クローラーはログインできないので、OGP 画像だけは合言葉なしで配る
 app.get('/iruinai-ogp.png', (req, res) => res.sendFile(path.join(__dirname, 'public/iruinai-ogp.png')));
@@ -100,6 +101,7 @@ if (PASSWORD) {
 app.use(attachUser);
 app.use('/api/auth', authRouter);
 app.use('/api/me', meRouter);
+app.get(['/account', '/reset'], pageAccount);
 app.use('/api', guard.writeGuard); // /api/auth と /api/me はこの前で処理済み
 
 app.get(['/', '/index.html'], pageIndex);
