@@ -10,6 +10,7 @@ const compression = require('compression');
 const multer = require('multer');
 const crypto = require('crypto');
 const { db, UPLOAD_DIR, inTransaction } = require('./lib/db');
+const { readCookie } = require('./lib/cookies');
 
 const ALLOWED_EXT = { 'image/png': '.png', 'image/jpeg': '.jpg', 'image/gif': '.gif', 'image/webp': '.webp' };
 const upload = multer({
@@ -43,14 +44,6 @@ function sameText(a, b) {
   const ha = crypto.createHash('sha256').update(a).digest();
   const hb = crypto.createHash('sha256').update(b).digest();
   return crypto.timingSafeEqual(ha, hb);
-}
-
-function readCookie(req, name) {
-  for (const part of (req.headers.cookie || '').split(';')) {
-    const i = part.indexOf('=');
-    if (i > 0 && part.slice(0, i).trim() === name) return part.slice(i + 1).trim();
-  }
-  return '';
 }
 
 // 総当たり対策：同じ IP から5回続けて間違えたら1分待たせる
