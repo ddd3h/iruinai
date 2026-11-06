@@ -1,6 +1,7 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { startServer, Client, registerUser } = require('./helpers');
+const { startServer, Client, registerUser, waitFor } = require('./helpers');
+const { hashPassword } = require('../lib/secrets');
 
 const resetUrlOf = (mail) => mail.text.match(/(https?:\/\/\S+\/reset\?token=[\w-]+)/)[1];
 
@@ -141,4 +142,33 @@ test('退会: PW が違えば消えない。正しければ人・在室・メモ
   db2.close();
   assert.ok((await b.get('/api/me')).json.user);
   assert.equal((await new Client(srv.base).post('/api/auth/login', { email: 'a@example.com', password: 'password123' })).status, 400);
+});
+
+test('ログインに成功しても失敗の回数は消えない（自分のアカウントで成功を挟んで回数を戻せない）', async (t) => {
+  const srv = await startServer();
+  t.after(() => srv.stop());
+  await registerUser(srv, { email: 'a@example.com', password: 'password123', person: { new_name: 'A' } });
+  const c = new Client(srv.base);
+  for (let i = 0; i < 4; i++) {
+    assert.equal((await c.post('/api/auth/login', { email: 'a@example.com', password: 'wrong-wrong' })).status, 400);
+  }
+  assert.equal((await c.post('/api/auth/login', { email: 'a@example.com', password: 'password123' })).status, 200); // 成功を挟む
+  assert.equal((await c.post('/api/auth/login', { email: 'a@example.com', password: 'wrong-wrong' })).status, 400); // 5回目の失敗
+  assert.equal((await c.post('/api/auth/login', { email: 'a@example.com', password: 'password123' })).status, 429);
+});
+
+test('SMTP 利用中に PUBLIC_URL が未設定なら、リセットのメールは送らない（Host ヘッダーで URL をすり替えられないように）', async (t) => {
+  const srv = await startServer({ SMTP_HOST: '127.0.0.1', SMTP_PORT: '1' });
+  t.after(() => srv.stop());
+  const db = srv.openDb();
+  const pid = Number(db.prepare("INSERT INTO people (name) VALUES ('A')").run().lastInsertRowid);
+  db.prepare('INSERT INTO users (email, password_hash, person_id, created_at) VALUES (?, ?, ?, ?)')
+    .run('a@example.com', hashPassword('password123'), pid, Date.now());
+  db.close();
+
+  const r = await new Client(srv.base).post('/api/auth/forgot', { email: 'a@example.com' });
+  assert.equal(r.status, 200);
+  assert.deepEqual(r.json, { ok: true });
+  await waitFor(() => srv.output().includes('PUBLIC_URL が未設定のため、パスワード再設定のメールを送れません'), 'PUBLIC_URL error log');
+  assert.ok(!srv.output().includes('PW リセットのメール送信に失敗'), srv.output()); // 送ろうとした形跡がない
 });

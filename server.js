@@ -423,7 +423,7 @@ app.listen(PORT, '0.0.0.0', () => {
   console.log(`在室カレンダー: http://localhost:${PORT}`);
   console.log(PASSWORD ? '合言葉: 有効' : '合言葉: 無効（ROOM_PASSWORD 未設定）');
   console.log(mailMode() === 'smtp' ? 'メール: SMTP で送信' : 'メール: コンソール出力（SMTP_HOST 未設定）');
-  if (mailMode() === 'smtp' && !PUBLIC_URL) console.warn('警告: PUBLIC_URL が未設定です。PW リセットの URL が Host ヘッダーから作られます。.env で PUBLIC_URL を設定してください');
+  if (mailMode() === 'smtp' && !PUBLIC_URL) console.warn('警告: SMTP を使うときは PUBLIC_URL の設定が必要です。未設定のままだと、パスワード再設定のメールは送られません。.env で PUBLIC_URL（例: https://room.example.com）を設定してください');
   cleanupAuth();
   removeUnusedIcons();
   shrinkExistingIcons().catch((err) => console.log('アイコンの縮小に失敗:', err.message));
