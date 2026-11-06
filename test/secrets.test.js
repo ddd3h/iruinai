@@ -38,3 +38,17 @@ test('safeEqualHex は長さが違っても例外を出さない', () => {
 test('DUMMY_HASH は検証できる形式', () => {
   assert.equal(S.verifyPassword('x', S.DUMMY_HASH), false);
 });
+
+test('デコードすると空になる hash は false で、true にならない', () => {
+  assert.equal(S.verifyPassword('x', 'scrypt$16384$8$1$AAAA$!'), false);
+});
+
+test('ソルトが空（またはデコードすると空）の hash は false', () => {
+  const hash = Buffer.alloc(64).toString('base64url');
+  assert.equal(S.verifyPassword('x', `scrypt$16384$8$1$$${hash}`), false);
+  assert.equal(S.verifyPassword('x', `scrypt$16384$8$1$!$${hash}`), false);
+});
+
+test('hash が 64 バイトでなければ（短ければ）false', () => {
+  assert.equal(S.verifyPassword('x', 'scrypt$16384$8$1$AAAA$AAAA'), false);
+});
