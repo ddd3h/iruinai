@@ -124,7 +124,7 @@ main { padding: 16px; }
 .ico { width: 1.25em; height: 1.25em; display: block; }
 .ico-wrap { display: inline-flex; }
 
-/* 上部の操作ボタン（戻る／人を追加） */
+/* 上部の操作ボタン（ログイン・ロック・メニューなど） */
 .top-actions { display: flex; align-items: center; gap: 6px; flex-shrink: 0; }
 .top-btn {
   display: inline-flex;
@@ -151,6 +151,8 @@ main { padding: 16px; }
 .top-btn.primary { padding: 0 16px 0 12px; background: var(--primary); color: #fff; box-shadow: 0 1px 2px rgba(79, 124, 255, .3), 0 2px 8px rgba(79, 124, 255, .2); }
 .top-btn.primary:disabled { opacity: .4; cursor: default; box-shadow: none; }
 .top-btn.primary:hover:not(:disabled) { background: #3f6cf0; box-shadow: 0 2px 4px rgba(79, 124, 255, .35), 0 4px 14px rgba(79, 124, 255, .28); }
+/* ログインは文字だけのボタン。アイコン付きの primary と違い、左右を同じ余白にする */
+#loginBtn { padding: 0 14px; white-space: nowrap; }
 .person-chip .edit .ico { width: 14px; height: 14px; }
 .person-chip .edit { display: inline-flex; align-items: center; }
 .avatar.room { background: #e5e7eb; color: #4b5563; }
@@ -360,6 +362,7 @@ body.locked .fc-event { cursor: default; }
   .top-btn.ghost { width: 36px; }
   .top-btn.primary { width: 36px; padding: 0; }
   .top-btn.primary .label { display: none; }
+  #loginBtn { width: auto; padding: 0 12px; white-space: nowrap; } /* 文字が入るよう幅を戻す（上の .top-btn.primary より優先） */
   /* ロック以外のボタンは「…」メニューに格納 */
   .menu-btn { display: inline-flex; }
   .menu-btn[aria-expanded="true"] { background: var(--bg); color: var(--text); }
@@ -494,14 +497,6 @@ dialog .export-people label.check, dialog .export-list label.check { margin: 4px
   font-size: 13px;
   box-shadow: 0 4px 16px rgba(0, 0, 0, .25);
 }
-.kb-person-list { display: flex; flex-direction: column; gap: 6px; margin-top: 8px; }
-.kb-person {
-  display: flex; align-items: center; gap: 10px;
-  padding: 10px 12px; border: 1px solid var(--border); border-radius: 10px;
-  background: var(--surface); color: var(--text); font: inherit; font-size: 15px; text-align: left; cursor: pointer;
-}
-.kb-person:hover { background: var(--bg); }
-.kb-person:focus-visible, .kb-person.selected { outline: none; border-color: var(--primary); background: #eaf0ff; }
 kbd {
   display: inline-block; min-width: 1.6em; margin: 0 2px; padding: 1px 6px;
   border: 1px solid var(--border); border-bottom-width: 2px; border-radius: 6px;

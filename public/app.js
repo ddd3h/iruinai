@@ -25,7 +25,7 @@ async function api(method, url, body) {
     opts.body = JSON.stringify(body);
   }
   const res = await fetch(url, opts);
-  if (res.status === 401 && !(await res.clone().json().catch(() => ({}))).needLogin) {
+  if (res.status === 401 && !(await res.clone().json().catch(() => ({})))?.needLogin) {
     location.href = '/login';
     throw new Error('ログインしてください');
   }
@@ -43,7 +43,12 @@ async function loadMe() {
 
 $('#loginBtn').addEventListener('click', () => { location.href = '/account'; });
 $('#logoutBtn').addEventListener('click', async () => {
-  await api('POST', '/api/auth/logout');
+  try {
+    await api('POST', '/api/auth/logout');
+  } catch (err) {
+    showToast(err.message || 'ログアウトできませんでした', false);
+    return;
+  }
   location.reload();
 });
 
@@ -1302,11 +1307,14 @@ $('#personDelete').addEventListener('click', () => {
 });
 $('#withdrawForm').addEventListener('submit', async (e) => {
   e.preventDefault();
+  const submit = $('#withdrawForm button[type="submit"]');
+  submit.disabled = true; // 送信中の二重押しを防ぐ（成功すると再読み込みされる）
   try {
     await api('POST', '/api/me/withdraw', { password: e.target.password.value });
     location.reload();
   } catch (err) {
     $('#withdrawError').textContent = err.message;
+    submit.disabled = false;
   }
 });
 
