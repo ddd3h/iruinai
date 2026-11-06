@@ -141,7 +141,9 @@ app.post('/api/people/restore', (req, res) => {
   if (!db.prepare('SELECT 1 FROM people WHERE id = ?').get(person.id)) return res.status(404).json({ error: 'not found' });
   // 画像は残っているときだけ使う
   const file = person.icon_path && path.join(UPLOAD_DIR, path.basename(String(person.icon_path)));
-  const icon = file && fs.existsSync(file) ? '/uploads/' + path.basename(file) : null;
+  let icon = file && fs.existsSync(file) ? '/uploads/' + path.basename(file) : null;
+  // 他の人が使っている画像は取り込まない（起動時の縮小で元の画像が消え、その人のアイコンが壊れるため）
+  if (icon && db.prepare('SELECT 1 FROM people WHERE icon_path = ? AND id != ?').get(icon, person.id)) icon = null;
   db.prepare('UPDATE people SET name = ?, color = ?, icon_path = ? WHERE id = ?').run(name, person.color, icon, person.id);
   res.json(db.prepare('SELECT * FROM people WHERE id = ?').get(person.id));
 });
@@ -170,6 +172,13 @@ function restoreMemos(items) {
     if (!memoTargetOk(personId)) throw new Error('人が存在しません');
     upsert.run(m.id, personId, title, allDay, m.start, m.end);
   }
+}
+
+// 「元に戻す」で書き戻せるのは、今までに採番された id（AUTOINCREMENT の seq 以下）だけ。
+// 大きな id を入れられると、次の追加が採番できずに壊れる
+function idsAllIssued(table, items) {
+  const seq = db.prepare('SELECT seq FROM sqlite_sequence WHERE name = ?').get(table)?.seq ?? 0;
+  return items.every((it) => !(it?.id > seq));
 }
 
 function validIds(ids) {
@@ -280,6 +289,7 @@ app.post('/api/stays/restore', (req, res) => {
   if (!items.every((it) => guard.mine(req, it?.person_id)) || !guard.staysAllMine(req, items.map((it) => it?.id))) {
     return guard.deny(res);
   }
+  if (!idsAllIssued('stays', items)) return res.status(400).json({ error: '入力が不正です' });
   inTransaction(() => restoreStays(items));
   res.status(204).end();
 });
@@ -366,6 +376,7 @@ app.post('/api/memos/restore', (req, res) => {
   if (!items.every((it) => guard.memoOk(req, it?.person_id ?? null)) || !guard.memosAllOk(req, items.map((it) => it?.id))) {
     return guard.deny(res);
   }
+  if (!idsAllIssued('memos', items)) return res.status(400).json({ error: '入力が不正です' });
   inTransaction(() => restoreMemos(items));
   res.status(204).end();
 });

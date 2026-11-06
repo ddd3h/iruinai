@@ -1,5 +1,7 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const path = require('node:path');
 const { startServer, Client, registerUser } = require('./helpers');
 
 // A と B がログイン済み、U は誰も紐付けていない既存の人
@@ -179,4 +181,82 @@ test('GET /api/people は claimed を返し、メールアドレスは返さな�
   assert.equal(by[B].claimed, 1);
   assert.equal(by[U].claimed, 0);
   assert.ok(!JSON.stringify(people).includes('@'));
+});
+
+// ---- 修正: restore のアイコン横取り・対象の検査・id の範囲 ----
+
+test('人: restore で、他人が使っているアイコン画像を自分のものにできない', async (t) => {
+  const { srv, a, A, B } = await setup(t);
+  const file = path.join(srv.dataDir, 'uploads', 'victim.png');
+  fs.writeFileSync(file, 'x');
+  const db = srv.openDb();
+  db.prepare("UPDATE people SET icon_path = '/uploads/victim.png' WHERE id = ?").run(B);
+  db.close();
+
+  const r = await a.post('/api/people/restore', { person: { id: A, name: 'A', color: '#4f7cff', icon_path: '/uploads/victim.png' } });
+  assert.equal(r.status, 200);
+  assert.equal(r.json.icon_path, null);
+  const people = (await a.get('/api/people')).json;
+  assert.equal(people.find((p) => p.id === B).icon_path, '/uploads/victim.png');
+  assert.ok(fs.existsSync(file));
+});
+
+test('人: restore で、だれも使っていない自分の古い画像は戻せる', async (t) => {
+  const { srv, a, A } = await setup(t);
+  fs.writeFileSync(path.join(srv.dataDir, 'uploads', 'mine.png'), 'x');
+  const r = await a.post('/api/people/restore', { person: { id: A, name: 'A', color: '#4f7cff', icon_path: '/uploads/mine.png' } });
+  assert.equal(r.status, 200);
+  assert.equal(r.json.icon_path, '/uploads/mine.png');
+});
+
+// 使い終わった id を作る（AUTOINCREMENT の seq が maxId まで進む。消した行の「元に戻す」と同じ状況）
+function burnIds(srv, maxId, A) {
+  const db = srv.openDb();
+  db.prepare("INSERT INTO stays (id, person_id, start, end, note) VALUES (?, ?, '2030-02-01T09:00:00', '2030-02-01T10:00:00', '')").run(maxId, A);
+  db.prepare('DELETE FROM stays WHERE id = ?').run(maxId);
+  db.prepare("INSERT INTO memos (id, person_id, title, all_day, start, end) VALUES (?, NULL, 'x', 1, '2030-02-01', '2030-02-02')").run(maxId);
+  db.prepare('DELETE FROM memos WHERE id = ?').run(maxId);
+  db.close();
+}
+
+test('restore: 存在しない id でも、書き戻す先が他人の人なら 403。自分の人なら通る', async (t) => {
+  const { srv, a, A, B } = await setup(t);
+  burnIds(srv, 60000, A);
+  const s = (id, person_id) => ({ id, person_id, start: '2030-01-05T09:00:00', end: '2030-01-05T18:00:00', note: '' });
+  const m = (id, extra) => ({ id, title: 'メモ', all_day: 1, start: '2030-01-05', end: '2030-01-06', ...extra });
+
+  // 在室: 存在しない id に、他人の person_id
+  assert.equal((await a.post('/api/stays/restore', { items: [s(50000, B)] })).status, 403);
+  assert.ok(!getStay(srv, 50000));
+  // メモ: 存在しない id に、他人の person_id
+  assert.equal((await a.post('/api/memos/restore', { items: [m(50000, { person_id: B })] })).status, 403);
+  assert.ok(!getMemo(srv, 50000));
+  // 在室: 存在しない id でも、自分の person_id なら通る（検査が厳しすぎない）
+  assert.equal((await a.post('/api/stays/restore', { items: [s(50000, A)] })).status, 204);
+  assert.equal(getStay(srv, 50000).person_id, A);
+});
+
+test('メモ: restore で person_id を省いて、他人の既存のメモの id を部屋のメモに書き換えられない', async (t) => {
+  const { srv, a, b, B } = await setup(t);
+  const theirs = (await b.post('/api/memos/batch', memo(B))).json.ids[0];
+  const row = getMemo(srv, theirs);
+  const { person_id, ...withoutPerson } = row;
+  assert.equal((await a.post('/api/memos/restore', { items: [{ ...withoutPerson, title: '上書き' }] })).status, 403);
+  assert.deepEqual({ ...getMemo(srv, theirs) }, { ...row });
+});
+
+test('restore: 今までに使われていない大きな id では書き戻せない（以後の追加を壊されない）', async (t) => {
+  const { srv, a, A, anon } = await setup(t);
+  const BIG = 9007199254740991;
+  const r1 = await a.post('/api/stays/restore', { items: [{ id: BIG, ...stay(A) }] });
+  assert.equal(r1.status, 400);
+  assert.equal(r1.json.error, '入力が不正です');
+  assert.equal((await a.post('/api/stays', stay(A))).status, 201);
+  assert.equal((await anon.get('/api/stays')).status, 200);
+
+  const r2 = await a.post('/api/memos/restore', { items: [{ id: BIG, ...memo(A), all_day: 1, start: '2030-01-05', end: '2030-01-06' }] });
+  assert.equal(r2.status, 400);
+  assert.equal(r2.json.error, '入力が不正です');
+  assert.equal((await a.post('/api/memos/batch', memo(A))).status, 201);
+  assert.equal((await anon.get('/api/memos')).status, 200);
 });
