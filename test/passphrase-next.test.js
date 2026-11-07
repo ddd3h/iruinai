@@ -87,6 +87,13 @@ test('安全でない next は無視して `/` へ送る（外部サイト・ル
     '/LOGIN',
     '/logout',
     '/Logout?x=1',
+    // ブラウザが `/logout`・`/login` に直して開く道（ドットのセグメント）。外部サイトに直るものも
+    '/./logout',
+    '/%2e/logout',
+    '/%2E%2E/logout',
+    '/a/../logout',
+    '/./login',
+    '/..//evil.com',
     '/foo\r\nSet-Cookie: injected=1',
     '/foo\nLocation: https://evil.com',
     '/foo\tbar',

@@ -101,6 +101,13 @@ function safeNext(v) {
   if (/[\u0000-\u001f\u007f]|%[01][0-9a-f]|%7f/i.test(v)) return null;
   const route = v.split(/[?#]/)[0].toLowerCase().replace(/\/+$/, '');
   if (route === '/login' || route === '/logout') return null;
+  // ブラウザは `/./logout`・`/%2e/logout`・`/a/../logout` を `/logout` に直して開くので、直したあとの道でも調べる。
+  // 返すのは元の値のまま（直した道を返すと、`/..//evil.com` が `//evil.com` になって外部サイトへ送ってしまう）
+  let u;
+  try { u = new URL(v, 'http://n.invalid'); } catch { return null; }
+  if (u.origin !== 'http://n.invalid' || u.pathname.startsWith('//')) return null;
+  const resolved = u.pathname.toLowerCase().replace(/\/+$/, '');
+  if (resolved === '/login' || resolved === '/logout') return null;
   return v;
 }
 const loginWithNext = (flag, next) => `/login${flag ? `?e=${flag}` : ''}${next ? `${flag ? '&' : '?'}next=${encodeURIComponent(next)}` : ''}`;
