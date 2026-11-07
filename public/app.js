@@ -570,38 +570,72 @@ const putBack = (kind, row) => {
   });
 };
 
-// ---------- スマホのサイドバー（表示する人） ----------
-// 幅が狭いときは、人のチップ一覧（表示／非表示の切り替え）を、左上の三本線で開くサイドバーに入れる
+// ---------- サイドバー（表示する人） ----------
+// 人のチップ一覧（表示／非表示の切り替え）は、ふだんは上のバーに 1 行で並べる。
+// 幅が狭いとき（600px 以下）か、人が増えて 1 行に収まらなくなったときは、左上の三本線で開くサイドバーに移す
 const peopleBox = $('#people');
 const peopleHome = peopleBox.parentNode;
 const peopleAnchor = peopleBox.nextElementSibling;
 const mqSide = window.matchMedia('(max-width: 600px)');
 let sidebarOpen = false;
+let sideMode = false;
+let printing = false;
 
 function setSidebar(open, restoreFocus = true) {
-  if (open && !mqSide.matches) return;
+  if (open && !sideMode) return;
   sidebarOpen = open;
   $('#sidebar').classList.toggle('open', open);
   $('#sideOverlay').hidden = !open;
   $('#sideBtn').setAttribute('aria-expanded', String(open));
   document.body.classList.toggle('side-open', open);
   if (open) $('#sidebar').focus();
-  else if (restoreFocus) $('#sideBtn').focus();
-}
-function placePeople() {
-  if (mqSide.matches) {
-    $('#sidePeople').append(peopleBox);
-  } else {
-    peopleHome.insertBefore(peopleBox, peopleAnchor);
-    setSidebar(false, false);
+  else {
+    if (restoreFocus) $('#sideBtn').focus();
+    scheduleSide(); // 開いている間は測らなかったので、閉じたら測り直す
   }
+}
+function toTop() {
+  document.body.classList.remove('side-mode');
+  if (peopleBox.parentNode !== peopleHome) peopleHome.insertBefore(peopleBox, peopleAnchor);
+}
+function toSide() {
+  sideMode = true;
+  document.body.classList.add('side-mode');
+  if (peopleBox.parentNode !== $('#sidePeople')) $('#sidePeople').append(peopleBox);
+}
+// 上のバーに置いたとき、チップが 1 行に収まっているか（どれかが次の行に回っていないか）
+function peopleFit() {
+  const chips = peopleBox.children;
+  if (chips.length < 2) return true;
+  const top = chips[0].getBoundingClientRect().top;
+  for (const c of chips) if (Math.abs(c.getBoundingClientRect().top - top) > 2) return false;
+  return true;
+}
+// どちらにするかは、いつも「上のバーに置いて測る」で決める（サイドバーに入れたまま測ると、戻る境目が決まらない）。測るのは描画の前なので、ちらつかない
+function updateSide() {
+  if (printing || sidebarOpen) return;
+  let on = mqSide.matches;
+  if (!on) { toTop(); on = !peopleFit(); }
+  if (on) toSide();
+  else { sideMode = false; setSidebar(false, false); }
+}
+let sideFrame = 0;
+function scheduleSide() {
+  if (sideFrame) return;
+  sideFrame = requestAnimationFrame(() => { sideFrame = 0; updateSide(); });
 }
 $('#sideBtn').addEventListener('click', () => setSidebar(!sidebarOpen));
 $('#sideClose').addEventListener('click', () => setSidebar(false));
 $('#sideOverlay').addEventListener('click', () => setSidebar(false));
 $('#sidebar').addEventListener('keydown', (e) => { if (e.key === 'Escape') { e.stopPropagation(); setSidebar(false); } });
-mqSide.addEventListener('change', placePeople);
-placePeople();
+mqSide.addEventListener('change', () => { if (sidebarOpen && !mqSide.matches) setSidebar(false, false); updateSide(); });
+window.addEventListener('resize', scheduleSide);
+if (window.ResizeObserver) new ResizeObserver(scheduleSide).observe(document.querySelector('.top-actions')); // ログインでボタンが増えたときなど
+if (document.fonts && document.fonts.ready) document.fonts.ready.then(scheduleSide);
+// 印刷では、人の一覧を上のバーに戻す
+window.addEventListener('beforeprint', () => { printing = true; toTop(); });
+window.addEventListener('afterprint', () => { printing = false; updateSide(); });
+updateSide();
 
 // ---------- 上部の人一覧 ----------
 function renderPeople() {
@@ -639,6 +673,7 @@ function renderPeople() {
     };
     box.append(chip);
   }
+  scheduleSide(); // 人が増えた・名前が変わったら、1 行に収まるかを測り直す
 }
 
 async function loadPeople() {

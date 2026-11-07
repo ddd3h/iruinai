@@ -9,7 +9,7 @@ const read = (f) => fs.readFileSync(path.join(__dirname, '../public', f), 'utf8'
 test('サイドバー: app.js が触る要素は index.html にあり、閉じた状態で始まる', () => {
   const html = read('index.html');
   const app = read('app.js');
-  const block = app.slice(app.indexOf('スマホのサイドバー'), app.indexOf('// ---------- 上部の人一覧'));
+  const block = app.slice(app.indexOf('サイドバー（表示する人）'), app.indexOf('// ---------- 上部の人一覧'));
   assert.ok(block.length > 200, 'サイドバーの処理が見つからない');
   const ids = new Set([...block.matchAll(/\$\('#([\w-]+)'\)/g)].map((m) => m[1]));
   for (const id of ['sideBtn', 'sidebar', 'sideOverlay', 'sideClose', 'sidePeople']) assert.ok(ids.has(id), `app.js が #${id} を使っていない`);

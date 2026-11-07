@@ -468,37 +468,40 @@ body.locked .fc-event { cursor: default; }
   .fc .fc-timegrid-now-indicator-line { border-width: 2px 0 0; }
 }
 
-/* スマホ用のサイドバー（広い画面では出さない） */
+/* サイドバー式の「表示する人」。狭い画面（600px 以下）か、上の人の一覧が 1 行に収まらないとき、app.js が body に side-mode を付ける */
 .side-btn, .sidebar, .side-overlay { display: none; }
 
+body.side-mode .topbar { flex-wrap: nowrap; }
+body.side-mode .side-btn { display: inline-flex; margin-left: -6px; color: var(--text); }
+body.side-mode .topbar h1 { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+body.side-mode .side-overlay { display: block; position: fixed; inset: 0; z-index: 80; background: rgba(20, 24, 48, .42); }
+body.side-mode .side-overlay[hidden] { display: none; }
+body.side-mode .sidebar {
+  display: flex; flex-direction: column; position: fixed; top: 0; left: 0; bottom: 0; z-index: 85;
+  width: min(300px, 82vw); padding: 14px 14px 24px; overflow-y: auto;
+  background: var(--surface); box-shadow: 8px 0 32px rgba(20, 24, 48, .2);
+  transform: translateX(-102%); visibility: hidden; transition: transform .22s ease, visibility 0s linear .22s;
+}
+body.side-mode .sidebar:focus { outline: none; }
+body.side-mode .sidebar.open { transform: none; visibility: visible; transition: transform .22s ease; }
+@media (prefers-reduced-motion: reduce) { body.side-mode .sidebar, body.side-mode .sidebar.open { transition: none; } }
+body.side-mode .side-head { display: flex; align-items: center; gap: 8px; padding: 2px 0 12px; border-bottom: 1px solid var(--border); }
+body.side-mode .side-title { flex: 1; min-width: 0; font-size: 17px; font-weight: 800; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+body.side-mode .side-close { width: 36px; height: 36px; border: none; border-radius: 50%; background: transparent; color: var(--muted); font-size: 20px; cursor: pointer; }
+body.side-mode .side-close:hover { background: var(--bg); color: var(--text); }
+body.side-mode .side-label { margin: 16px 0 2px; font-size: 13px; font-weight: 800; color: var(--muted); letter-spacing: .04em; }
+body.side-mode .side-hint { margin: 0 0 10px; }
+body.side-mode .side-people { display: flex; flex-direction: column; gap: 8px; }
+body.side-mode .side-people .people { flex-direction: column; flex-wrap: nowrap; overflow: visible; gap: 8px; }
+body.side-mode .sidebar .person-chip { width: 100%; min-height: 48px; padding: 6px 12px 6px 6px; font-size: 15px; gap: 10px; }
+body.side-mode .sidebar .person-chip .avatar { width: 34px; height: 34px; font-size: 14px; }
+body.side-mode .sidebar .person-chip .edit { margin-left: auto; }
+body.side-open { overflow: hidden; }
+
 @media (max-width: 600px) {
-  /* ヘッダー：左上の三本線、タイトル、右にボタン。人の一覧はサイドバーに入れる */
-  .topbar { gap: 8px; padding: 10px 12px; flex-wrap: nowrap; }
-  .side-btn { display: inline-flex; margin-left: -6px; color: var(--text); }
-  .topbar h1 { flex: 1; min-width: 0; font-size: 16px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .side-overlay { display: block; position: fixed; inset: 0; z-index: 80; background: rgba(20, 24, 48, .42); }
-  .side-overlay[hidden] { display: none; }
-  .sidebar {
-    display: flex; flex-direction: column; position: fixed; top: 0; left: 0; bottom: 0; z-index: 85;
-    width: min(300px, 82vw); padding: 14px 14px 24px; overflow-y: auto;
-    background: var(--surface); box-shadow: 8px 0 32px rgba(20, 24, 48, .2);
-    transform: translateX(-102%); visibility: hidden; transition: transform .22s ease, visibility 0s linear .22s;
-  }
-  .sidebar:focus { outline: none; }
-  .sidebar.open { transform: none; visibility: visible; transition: transform .22s ease; }
-  @media (prefers-reduced-motion: reduce) { .sidebar, .sidebar.open { transition: none; } }
-  .side-head { display: flex; align-items: center; gap: 8px; padding: 2px 0 12px; border-bottom: 1px solid var(--border); }
-  .side-title { flex: 1; min-width: 0; font-size: 17px; font-weight: 800; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .side-close { width: 36px; height: 36px; border: none; border-radius: 50%; background: transparent; color: var(--muted); font-size: 20px; cursor: pointer; }
-  .side-close:hover { background: var(--bg); color: var(--text); }
-  .side-label { margin: 16px 0 2px; font-size: 13px; font-weight: 800; color: var(--muted); letter-spacing: .04em; }
-  .side-hint { margin: 0 0 10px; }
-  .side-people { display: flex; flex-direction: column; gap: 8px; }
-  .side-people .people { flex-direction: column; flex-wrap: nowrap; overflow: visible; gap: 8px; }
-  .sidebar .person-chip { width: 100%; min-height: 48px; padding: 6px 12px 6px 6px; font-size: 15px; gap: 10px; }
-  .sidebar .person-chip .avatar { width: 34px; height: 34px; font-size: 14px; }
-  .sidebar .person-chip .edit { margin-left: auto; }
-  body.side-open { overflow: hidden; }
+  /* ヘッダー：タイトルと右のボタンを詰める（人の一覧は、上のとおりサイドバーに入る） */
+  .topbar { gap: 8px; padding: 10px 12px; }
+  .topbar h1 { font-size: 16px; }
   .top-actions { gap: 2px; position: relative; }
   .top-btn { height: 36px; min-width: 36px; }
   .top-btn.ghost { width: 36px; }
