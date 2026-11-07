@@ -12,6 +12,7 @@ const crypto = require('crypto');
 const { db, UPLOAD_DIR, inTransaction } = require('./lib/db');
 const { readCookie } = require('./lib/cookies');
 const { authRouter, meRouter, attachUser, cleanup: cleanupAuth, destroySession, mailMode } = require('./lib/auth');
+const { appTitle } = require('./lib/appTitle');
 
 const ALLOWED_EXT = { 'image/png': '.png', 'image/jpeg': '.jpg', 'image/gif': '.gif', 'image/webp': '.webp' };
 const upload = multer({
@@ -73,14 +74,19 @@ const LOCK_MS = 60 * 1000;
 // OGP の画像は URL が絶対でないと読まれないため、HTML の __ORIGIN__ をアクセス先の URL に置き換えて返す
 // リバースプロキシの後ろで URL が違って見えるときは PUBLIC_URL（例: https://room.example.com）を設定する
 const PUBLIC_URL = (process.env.PUBLIC_URL || '').replace(/\/+$/, '');
-// vars(req) があれば、そこで返した { 'プレースホルダー': '値' } も置き換える（値は呼び出し側で HTML に escape しておく）。
-// 置き換えは関数で行う。文字列だと、値の中の `$&` などが特別な意味に解釈されてしまうため
+// __TITLE__ は、アプリの名前（APP_TITLE。既定は「在室カレンダー」）に置き換える。HTML に escape して入れる。
+// vars(req) があれば、そこで返した { '__名前__': '値' } も置き換える（値は呼び出し側で HTML に escape しておく）。
+// 置き換えは 1回の走査で行い、関数で値を返す。値の中の `$&` などが特別な意味に解釈されたり、
+// 値の中の `__NEXT__` のような文字がもう一度置き換えられたりしないため
 function sendPage(file, vars) {
   const html = fs.readFileSync(path.join(__dirname, 'public', file), 'utf8');
   return (req, res) => {
-    let out = html.replaceAll('__ORIGIN__', () => PUBLIC_URL || `${req.protocol}://${req.get('host')}`);
-    if (vars) for (const [key, value] of Object.entries(vars(req))) out = out.replaceAll(key, () => value);
-    res.type('html').send(out);
+    const subs = {
+      __ORIGIN__: PUBLIC_URL || `${req.protocol}://${req.get('host')}`,
+      __TITLE__: escapeHtml(appTitle()),
+      ...(vars ? vars(req) : {}),
+    };
+    res.type('html').send(html.replace(new RegExp(Object.keys(subs).join('|'), 'g'), (key) => subs[key]));
   };
 }
 const escapeHtml = (s) => s.replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
@@ -164,7 +170,10 @@ if (PASSWORD) {
 app.use(attachUser);
 app.use('/api/auth', authRouter);
 app.use('/api/me', meRouter);
-app.get(['/account', '/reset'], pageAccount);
+app.get(['/account', '/account.html', '/reset'], pageAccount);
+// プレースホルダー（__TITLE__ など）を持つ HTML は、.html のアドレスで開かれても置き換えて返す（下の express.static が生のまま配らないように）
+app.get('/login.html', pageLogin);
+app.get('/logout.html', pageLogout);
 app.use('/api', guard.writeGuard); // /api/auth と /api/me はこの前で処理済み
 
 app.get(['/', '/index.html'], pageIndex);

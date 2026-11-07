@@ -45,10 +45,13 @@ async function startServer(extraEnv = {}, { startTimeout = 5000, seed, fakeClock
   let out = '';
   try {
     if (seed) seed(dataDir); // 起動前に app.db などを用意する（古い形式の DB の確認用）
+    // 開発者のシェルに APP_TITLE があっても、既定のタイトルで確かめる（.env の読み込みを確かめるテストのために、空文字ではなく消す）
+    const inherited = { ...process.env };
+    delete inherited.APP_TITLE;
     for (let attempt = 1; ; attempt++) {
       port = await freePort();
       const env = {
-        ...process.env,
+        ...inherited,
         PORT: String(port),
         DATA_DIR: dataDir,
         ROOM_PASSWORD: '',

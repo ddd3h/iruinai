@@ -201,6 +201,7 @@ CSRF 対策は、Cookie の `SameSite=Lax` に任せる。他サイトからの 
 - `lib/guard.js`: 所有者の検査と、未ログインの書き込みの拒否
 - `lib/secrets.js`: PW のハッシュ、トークンと 6桁コードの生成
 - `lib/cookies.js`: Cookie の読み取り
+- `lib/appTitle.js`: アプリの名前（`APP_TITLE`）。下の「設定（`.env`）」
 - `public/account.html`, `public/account.js`: 新しい画面
 - `public/logout.html`: `/logout` の確認画面
 
@@ -214,6 +215,11 @@ CSRF 対策は、Cookie の `SameSite=Lax` に任せる。他サイトからの 
 - `SMTP_HOST` が未設定なら、メールは送らず、コードとリセット URL をサーバーのコンソールに出す。LAN 内での簡易運用とテスト用。起動時に「メール: コンソール出力」と表示する。
 - リセット URL は、`PUBLIC_URL`（既存の変数）から組み立てる。`SMTP_HOST` が設定されているときは、`PUBLIC_URL` が必須になる。未設定なら、`Host` ヘッダーは偽造される恐れがあるので URL を作らず、パスワード再設定のメールを送らない（ログに理由を出す。API の応答は変わらない）。起動時にも警告を出し、README で `PUBLIC_URL` の設定を求める。`SMTP_HOST` が未設定（コンソール出力）のときは、URL をサーバーのコンソールに出すだけなので、`PUBLIC_URL` が未設定なら `Host` ヘッダーから組み立てる。
 - `MAIL_FROM` が未設定なら、送信元は `SMTP_USER` にする。
+- `APP_TITLE`: アプリの名前（既定は「在室カレンダー」）。左上の見出し、タブのタイトル、共有時のタイトル（`og:site_name`・`og:title`）、合言葉・アカウント・ログアウト確認の画面、確認コードとパスワード再設定のメールの件名（`【名前】確認コード`・`【名前】パスワードの再設定`）と確認コードの本文（`名前の確認コードです。`）に使う。
+  - `lib/appTitle.js` の `appTitle()` が、呼ばれるたびに `process.env.APP_TITLE` を読む（`server.js` が `.env` を読んだあとの値を、読み込みの順番に頼らず使うため）。前後の空白を取り、空白・改行（CR/LF を含む）・制御文字の連なりを 1つの空白にし、40文字（コードポイント）で切る。空になったら既定の名前。1行にするのは、メールの件名に改行を入れさせないため。
+  - 画面（`index.html`・`login.html`・`account.html`・`logout.html`）には、プレースホルダー `__TITLE__` を置き、`sendPage` が `escapeHtml(appTitle())`（`& < > " '` を escape）で置き換える。置き換えは 1回の走査で、値の中の `$&` や `__NEXT__` のような文字は特別に扱わない。`/account.html`・`/login.html`・`/logout.html` のように `.html` のアドレスで開かれたときも、静的ファイルとして生のまま配らず、同じ処理を通す。メールには escape しない値をそのまま入れる。
+  - 起動のログ `在室カレンダー: http://localhost:PORT` は変えない（テストの起動待ちや運用の目印に使う）。
+  - 共有時の画像 `public/iruinai-ogp.png` は静的な画像で、既定の名前が焼き込まれている。`APP_TITLE` には追従しない（README に書く）。
 - `ROOM_PASSWORD` が未設定なら、LAN につながる人なら誰でも登録できる。README の注意事項に書く。
 
 ## エラーの扱い
@@ -243,6 +249,7 @@ CSRF 対策は、Cookie の `SameSite=Lax` に任せる。他サイトからの 
   - Cookie の属性（`HttpOnly`・`SameSite=Lax`・`Path=/api/auth`・`Max-Age`・HTTPS で `Secure`）と、確認後に消えること。DB には hash だけが入る
   - メールの書式に使う記号を含むアドレス、型が違う入力は `400`
   - 古い形式の DB（`resend_count`・`browser_hash` なし）でも起動できる
+  - `APP_TITLE`: 見出し・タイトル・共有時のタイトル・合言葉/アカウント/ログアウトの画面・メールの件名と本文に出る。HTML の記号は escape される。改行は 1行にまとまり、100文字は 40文字に切れる。未設定・空白だけは既定。`.env` でも使える
   - リセット URL は 1回限りで、使うとその人の全セッションが消える
   - 他人の在室への PUT/DELETE/batch/restore が `403`
   - 他人の人への付け替えが `403`
