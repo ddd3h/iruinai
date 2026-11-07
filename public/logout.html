@@ -5,17 +5,35 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="robots" content="noindex">
   <title>ログアウト | __TITLE__</title>
-  <link rel="stylesheet" href="/style.css">
+  <!-- 合言葉のない端末でも開かれるが、/style.css は合言葉の内側にあって読めないので、見た目はここに書く（login.html と同じ） -->
+  <style>
+    * { box-sizing: border-box; }
+    body {
+      margin: 0; min-height: 100vh; display: flex; align-items: center; justify-content: center;
+      padding: 16px; background: #f6f7f9; color: #1f2328;
+      font-family: system-ui, -apple-system, "Hiragino Sans", "Noto Sans JP", sans-serif;
+    }
+    main { width: 100%; max-width: 340px; background: #fff; border: 1px solid #e3e5e8; border-radius: 12px; padding: 24px; }
+    h1 { font-size: 20px; margin: 0 0 16px; }
+    h2 { font-size: 16px; margin: 0 0 8px; }
+    .hint { color: #6b7280; font-size: 14px; margin: 0; }
+    button {
+      width: 100%; margin-top: 16px; padding: 10px; font-size: 16px; font-weight: 600;
+      color: #fff; background: #4f7cff; border: 0; border-radius: 8px; cursor: pointer;
+    }
+    .links { text-align: center; margin: 16px 0 0; font-size: 14px; }
+    .links a { color: #6b7280; }
+  </style>
 </head>
-<body class="account-page">
-  <main class="account-card">
+<body>
+  <main>
     <h1>__TITLE__</h1>
     <!-- 他のサイトのリンクから開かれたときの確認画面。ボタンを押したときだけ POST /logout で実際にログアウトする -->
     <form method="post" action="/logout">
       <h2>ログアウトしますか？</h2>
       <p class="hint">合言葉とログインの両方からログアウトします。</p>
-      <button type="submit" class="btn primary wide">ログアウトする</button>
-      <p class="account-links"><a href="/">やめる</a></p>
+      <button type="submit">ログアウトする</button>
+      <p class="links"><a href="/">やめる</a></p>
     </form>
   </main>
 </body>

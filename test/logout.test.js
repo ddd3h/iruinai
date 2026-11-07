@@ -51,6 +51,9 @@ test('GET /logout: cross-site・same-site・ヘッダーなしでは、ログア
     assert.match(r.text, /ログアウトしますか？/, label);
     assert.match(r.text, /<form method="post" action="\/logout">/, label);
     assert.match(r.text, /<button type="submit"/, label);
+    // /style.css は合言葉の内側にあり、合言葉のない端末では読めない。見た目はページの中に書く
+    assert.doesNotMatch(r.text, /<link[^>]*stylesheet/, label);
+    assert.match(r.text, /<style>[\s\S]*button[\s\S]*<\/style>/, label);
     assert.equal(r.headers.get('set-cookie'), null, label); // Cookie を触らない
     assert.ok(!r.text.includes('a@example.com'), label); // ユーザーの情報は入れない
     assert.equal(c.jar.size, 2, label);
@@ -105,4 +108,12 @@ test('/logout は合言葉の外側にあるまま。確認の画面に、合言
   const c = new Client(open.base);
   assert.equal((await c.request('GET', '/logout', undefined, site('same-origin'))).status, 404);
   assert.equal((await c.post('/logout', undefined)).status, 404);
+});
+
+test('合言葉を通っていない端末に出る確認画面は、外部のスタイルシートに頼らない', async (t) => {
+  const srv = await setup(t);
+  const r = await new Client(srv.base).request('GET', '/logout', undefined, site('cross-site'));
+  assert.equal(r.status, 200);
+  assert.doesNotMatch(r.text, /<link[^>]*stylesheet/);
+  assert.equal((await new Client(srv.base).get('/style.css')).status, 303); // style.css は合言葉の内側
 });
