@@ -45,31 +45,37 @@ async function startServer(extraEnv = {}, { startTimeout = 5000, seed, fakeClock
   let out = '';
   try {
     if (seed) seed(dataDir); // 起動前に app.db などを用意する（古い形式の DB の確認用）
-    port = await freePort();
-    const env = {
-      ...process.env,
-      PORT: String(port),
-      DATA_DIR: dataDir,
-      ROOM_PASSWORD: '',
-      SMTP_HOST: '',
-      PUBLIC_URL: '',
-      ENV_FILE: path.join(dataDir, 'none.env'), // 開発用の .env を読ませない
-      ...extraEnv,
-    };
-    if (fakeClock) env.NODE_OPTIONS = [process.env.NODE_OPTIONS, `--require=${path.join(__dirname, 'fake-clock.js')}`].filter(Boolean).join(' ');
-    child = spawn(process.execPath, [path.join(ROOT, 'server.js')], { env, stdio: ['ignore', 'pipe', 'pipe'] });
-    let spawnError = null;
-    // 'close' は終了後に stdout/stderr を読み切ってから来る。起動に失敗したときは 'error' だけが来る
-    exited = new Promise((resolve) => {
-      child.on('close', resolve);
-      child.on('error', (err) => { spawnError = err; resolve(); });
-    });
-    child.stdout.on('data', (d) => { out += d; });
-    child.stderr.on('data', (d) => { out += d; });
-    const hasExited = () => spawnError !== null || child.exitCode !== null || child.signalCode !== null;
-    await waitFor(() => out.includes('在室カレンダー: http') || hasExited(), 'server start', startTimeout);
-    if (hasExited()) {
+    for (let attempt = 1; ; attempt++) {
+      port = await freePort();
+      const env = {
+        ...process.env,
+        PORT: String(port),
+        DATA_DIR: dataDir,
+        ROOM_PASSWORD: '',
+        SMTP_HOST: '',
+        PUBLIC_URL: '',
+        ENV_FILE: path.join(dataDir, 'none.env'), // 開発用の .env を読ませない
+        ...extraEnv,
+      };
+      if (fakeClock) env.NODE_OPTIONS = [process.env.NODE_OPTIONS, `--require=${path.join(__dirname, 'fake-clock.js')}`].filter(Boolean).join(' ');
+      child = spawn(process.execPath, [path.join(ROOT, 'server.js')], { env, stdio: ['ignore', 'pipe', 'pipe'] });
+      let spawnError = null;
+      // 'close' は終了後に stdout/stderr を読み切ってから来る。起動に失敗したときは 'error' だけが来る
+      exited = new Promise((resolve) => {
+        child.on('close', resolve);
+        child.on('error', (err) => { spawnError = err; resolve(); });
+      });
+      child.stdout.on('data', (d) => { out += d; });
+      child.stderr.on('data', (d) => { out += d; });
+      const hasExited = () => spawnError !== null || child.exitCode !== null || child.signalCode !== null;
+      await waitFor(() => out.includes('在室カレンダー: http') || hasExited(), 'server start', startTimeout);
+      if (!hasExited()) break;
       await exited; // 出力を読み切る
+      // 空きポートを選んでから起動するまでの間に、並行して動く別のテストのサーバーが同じポートを取ることがある。選び直して起動し直す
+      if (attempt < 5 && !spawnError && out.includes('EADDRINUSE')) {
+        out = '';
+        continue;
+      }
       throw new Error(spawnError ? `server spawn failed: ${spawnError.message}` : 'server exited');
     }
   } catch (err) {

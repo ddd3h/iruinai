@@ -504,7 +504,12 @@ function removeUnusedIcons() {
 }
 
 const PORT = process.env.PORT || 3000;
-app.listen(PORT, '0.0.0.0', () => {
+app.listen(PORT, '0.0.0.0', (err) => {
+  // ポートがすでに使われているときなど。起動したふりをせず、理由を出して止まる（Express 5 は、待ち受けの失敗もこの引数で渡す）
+  if (err) {
+    console.error(`起動できません: ${err.message}`);
+    process.exit(1);
+  }
   console.log(`在室カレンダー: http://localhost:${PORT}`);
   console.log(PASSWORD ? '合言葉: 有効' : '合言葉: 無効（ROOM_PASSWORD 未設定）');
   console.log(mailMode() === 'smtp' ? 'メール: SMTP で送信' : 'メール: コンソール出力（SMTP_HOST 未設定）');
