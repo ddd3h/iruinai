@@ -427,7 +427,8 @@
 
   // 新着の反応を、予定の上に吹き出しで出す。予定が画面に見えていないときは何も出さない（ベルの数だけ増える）。
   // wait: 開いた直後は予定がまだ描かれていないことがあるので、描かれるまで少し待つ
-  function showBubble(it, delay, wait = false) {
+  // onShown(b): 吹き出しが実際に出た瞬間に呼ばれる。消すタイミングは、呼び出し側が決める（返り値が true ならそちらが消す）
+  function showBubble(it, delay, wait = false, onShown = null) {
     const attempt = (n) => {
       const el = findEventEl(it.target.type, it.target.id);
       if (!el) { if (wait && n < 20) setTimeout(() => attempt(n + 1), 300); return; }
@@ -442,17 +443,46 @@
         b.style.left = `${Math.min(Math.max(rect.left + rect.width / 2, 60), window.innerWidth - 60)}px`;
         b.style.top = `${Math.max(rect.top, 8)}px`;
         document.body.append(b);
-        setTimeout(() => b.remove(), BUBBLE_MS);
+        if (!(onShown && onShown(b))) b._t = setTimeout(() => b.remove(), BUBBLE_MS);
       }, delay);
     };
     attempt(0);
   }
 
   // 吹き出しと音で知らせる。音は 1 回だけ。ブラウザが操作前の再生を止めているときは、最初の操作のあとに鳴らす
+  // 音は、最初の吹き出しが実際に出た瞬間に鳴らす（吹き出しとそろう）。ブラウザが止めたときは、吹き出しを出したまま（最長 HOLD_MS）にして、
+  // 最初の操作で鳴らし、そこから BUBBLE_MS で消す。操作がないまま音だけあとで鳴ったり、音のない吹き出しが消えたりしない
+  const HOLD_MS = 20000;
   let pendingPop = false;
+  const held = new Set();
+  function holdBubble(b) {
+    clearTimeout(b._t);
+    held.add(b);
+    b._t = setTimeout(() => { held.delete(b); b.remove(); }, HOLD_MS);
+  }
+  function releaseHeld() {
+    for (const b of held) { clearTimeout(b._t); b._t = setTimeout(() => b.remove(), BUBBLE_MS); }
+    held.clear();
+  }
   function announce(list, opening) {
-    list.forEach((it, i) => showBubble(it, i * (opening ? 800 : 450), opening));
-    sound.pop().then((ok) => { if (!ok && !sound.isMuted()) pendingPop = true; });
+    const shown = [];
+    let cued = false;
+    const onShown = (b) => {
+      shown.push(b);
+      if (!cued) {
+        cued = true;
+        sound.pop().then((ok) => {
+          if (ok) { pendingPop = false; releaseHeld(); return; }
+          if (sound.isMuted()) return;
+          pendingPop = true;
+          shown.forEach((x) => { if (x.isConnected) holdBubble(x); });
+        });
+        return false;
+      }
+      if (pendingPop) { b._t = 0; holdBubble(b); return true; } // 止められている間に出る吹き出しも、音といっしょに消す
+      return false;
+    };
+    list.forEach((it, i) => showBubble(it, i * (opening ? 800 : 450), opening, onShown));
   }
 
   async function poll() {
@@ -546,7 +576,7 @@
     // 音は、最初の操作のあとから鳴らせる（ブラウザの自動再生の制限）
     const unlock = () => {
       sound.unlock();
-      if (pendingPop) sound.pop().then((ok) => { if (ok || sound.isMuted()) pendingPop = false; }); // 操作の中で呼ぶので、再生が許される
+      if (pendingPop) sound.pop().then((ok) => { if (ok || sound.isMuted()) { pendingPop = false; releaseHeld(); } }); // 操作の中で呼ぶので、再生が許される
     };
     document.addEventListener('pointerdown', unlock);
     document.addEventListener('keydown', unlock);
