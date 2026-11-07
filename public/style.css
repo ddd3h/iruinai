@@ -468,14 +468,37 @@ body.locked .fc-event { cursor: default; }
   .fc .fc-timegrid-now-indicator-line { border-width: 2px 0 0; }
 }
 
+/* スマホ用のサイドバー（広い画面では出さない） */
+.side-btn, .sidebar, .side-overlay { display: none; }
+
 @media (max-width: 600px) {
-  /* ヘッダー：タイトル＋人の横スクロール一列 */
+  /* ヘッダー：左上の三本線、タイトル、右にボタン。人の一覧はサイドバーに入れる */
   .topbar { gap: 8px; padding: 10px 12px; flex-wrap: nowrap; }
-  .topbar h1 { display: none; }
-  .people { flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; min-width: 0; }
-  .people::-webkit-scrollbar { display: none; }
-  .person-chip { padding: 2px 8px 2px 2px; font-size: 13px; gap: 4px; }
-  .person-chip .avatar { width: 24px; height: 24px; font-size: 11px; }
+  .side-btn { display: inline-flex; margin-left: -6px; color: var(--text); }
+  .topbar h1 { flex: 1; min-width: 0; font-size: 16px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .side-overlay { display: block; position: fixed; inset: 0; z-index: 80; background: rgba(20, 24, 48, .42); }
+  .side-overlay[hidden] { display: none; }
+  .sidebar {
+    display: flex; flex-direction: column; position: fixed; top: 0; left: 0; bottom: 0; z-index: 85;
+    width: min(300px, 82vw); padding: 14px 14px 24px; overflow-y: auto;
+    background: var(--surface); box-shadow: 8px 0 32px rgba(20, 24, 48, .2);
+    transform: translateX(-102%); visibility: hidden; transition: transform .22s ease, visibility 0s linear .22s;
+  }
+  .sidebar:focus { outline: none; }
+  .sidebar.open { transform: none; visibility: visible; transition: transform .22s ease; }
+  @media (prefers-reduced-motion: reduce) { .sidebar, .sidebar.open { transition: none; } }
+  .side-head { display: flex; align-items: center; gap: 8px; padding: 2px 0 12px; border-bottom: 1px solid var(--border); }
+  .side-title { flex: 1; min-width: 0; font-size: 17px; font-weight: 800; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .side-close { width: 36px; height: 36px; border: none; border-radius: 50%; background: transparent; color: var(--muted); font-size: 20px; cursor: pointer; }
+  .side-close:hover { background: var(--bg); color: var(--text); }
+  .side-label { margin: 16px 0 2px; font-size: 13px; font-weight: 800; color: var(--muted); letter-spacing: .04em; }
+  .side-hint { margin: 0 0 10px; }
+  .side-people { display: flex; flex-direction: column; gap: 8px; }
+  .side-people .people { flex-direction: column; flex-wrap: nowrap; overflow: visible; gap: 8px; }
+  .sidebar .person-chip { width: 100%; min-height: 48px; padding: 6px 12px 6px 6px; font-size: 15px; gap: 10px; }
+  .sidebar .person-chip .avatar { width: 34px; height: 34px; font-size: 14px; }
+  .sidebar .person-chip .edit { margin-left: auto; }
+  body.side-open { overflow: hidden; }
   .top-actions { gap: 2px; position: relative; }
   .top-btn { height: 36px; min-width: 36px; }
   .top-btn.ghost { width: 36px; }
@@ -581,7 +604,7 @@ dialog .export-people label.check, dialog .export-list label.check { margin: 4px
   @page { size: A4 landscape; margin: 10mm; }
   * { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
   body { background: #fff; }
-  .fab, #toast, .top-actions, dialog, .fc-header-toolbar, .person-chip .edit { display: none !important; }
+  .fab, #toast, .top-actions, dialog, .side-btn, .sidebar, .side-overlay, .fc-header-toolbar, .person-chip .edit { display: none !important; }
   .topbar { border: none; padding: 0 0 8px; }
   .print-only { display: block; font-size: 18px; font-weight: 600; }
   .fc .fc-timegrid-body, .fc .fc-timegrid-cols, .fc .fc-timegrid-body > div,

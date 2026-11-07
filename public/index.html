@@ -19,6 +19,7 @@
 </head>
 <body class="locked">
   <header class="topbar">
+    <button id="sideBtn" class="top-btn ghost side-btn" type="button" aria-controls="sidebar" aria-expanded="false" title="表示する人" aria-label="表示する人を選ぶ"><svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M4 7h16M4 12h16M4 17h16"/></svg></button>
     <h1>__TITLE__</h1>
     <div id="printTitle" class="print-only"></div>
     <div id="people" class="people"></div>
@@ -37,6 +38,18 @@
       </div>
     </div>
   </header>
+
+  <!-- スマホ: 「表示する人」を入れるサイドバー -->
+  <div id="sideOverlay" class="side-overlay" hidden></div>
+  <aside id="sidebar" class="sidebar" aria-label="表示する人" tabindex="-1">
+    <div class="side-head">
+      <strong class="side-title">__TITLE__</strong>
+      <button type="button" id="sideClose" class="side-close" aria-label="閉じる">×</button>
+    </div>
+    <p class="side-label">表示する人</p>
+    <p class="hint side-hint">タップで、その人の予定を表示／非表示にします</p>
+    <div id="sidePeople" class="side-people"></div>
+  </aside>
 
   <!-- 反応の履歴 -->
   <div id="bellPanel" class="bell-panel" role="dialog" aria-label="反応の履歴" tabindex="-1" hidden>

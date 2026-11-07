@@ -570,6 +570,39 @@ const putBack = (kind, row) => {
   });
 };
 
+// ---------- スマホのサイドバー（表示する人） ----------
+// 幅が狭いときは、人のチップ一覧（表示／非表示の切り替え）を、左上の三本線で開くサイドバーに入れる
+const peopleBox = $('#people');
+const peopleHome = peopleBox.parentNode;
+const peopleAnchor = peopleBox.nextElementSibling;
+const mqSide = window.matchMedia('(max-width: 600px)');
+let sidebarOpen = false;
+
+function setSidebar(open, restoreFocus = true) {
+  if (open && !mqSide.matches) return;
+  sidebarOpen = open;
+  $('#sidebar').classList.toggle('open', open);
+  $('#sideOverlay').hidden = !open;
+  $('#sideBtn').setAttribute('aria-expanded', String(open));
+  document.body.classList.toggle('side-open', open);
+  if (open) $('#sidebar').focus();
+  else if (restoreFocus) $('#sideBtn').focus();
+}
+function placePeople() {
+  if (mqSide.matches) {
+    $('#sidePeople').append(peopleBox);
+  } else {
+    peopleHome.insertBefore(peopleBox, peopleAnchor);
+    setSidebar(false, false);
+  }
+}
+$('#sideBtn').addEventListener('click', () => setSidebar(!sidebarOpen));
+$('#sideClose').addEventListener('click', () => setSidebar(false));
+$('#sideOverlay').addEventListener('click', () => setSidebar(false));
+$('#sidebar').addEventListener('keydown', (e) => { if (e.key === 'Escape') { e.stopPropagation(); setSidebar(false); } });
+mqSide.addEventListener('change', placePeople);
+placePeople();
+
 // ---------- 上部の人一覧 ----------
 function renderPeople() {
   const box = $('#people');
@@ -596,7 +629,7 @@ function renderPeople() {
       edit.className = 'edit';
       edit.append(icon('pencil'));
       edit.title = '編集';
-      edit.onclick = (e) => { e.stopPropagation(); if (requireUnlocked()) openPersonDialog(p); };
+      edit.onclick = (e) => { e.stopPropagation(); if (requireUnlocked()) { setSidebar(false, false); openPersonDialog(p); } };
       chip.append(edit);
     }
     chip.onclick = () => {
