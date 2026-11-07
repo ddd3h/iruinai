@@ -773,7 +773,7 @@ function initCalendar() {
       const label = document.createElement('span');
       label.className = 'holiday-name';
       label.textContent = name;
-      top.prepend(label);
+      top.append(label); // 日付欄は右から並べる（row-reverse）ので、数字のあとに足すと、数字は右端のまま、祝日名がその左に入る
     },
     eventDidMount: (arg) => { arg.el.dataset.eid = arg.event.id; Reactions.decorateEl(arg.el); },
     eventsSet: () => { requestAnimationFrame(applyKbCursor); Reactions.refreshSummary(); },

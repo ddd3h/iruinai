@@ -118,7 +118,9 @@ main { padding: 20px 24px 32px; max-width: 1400px; margin: 0 auto; }
 .fc .fc-daygrid-day-top { align-items: baseline; }
 .holiday-name {
   flex: 1;
-  padding: 4px 0 0 4px;
+  min-width: 0;
+  text-align: right;
+  padding: 4px 4px 0 0;
   font-size: 11px;
   color: #dc2626;
   white-space: nowrap;
