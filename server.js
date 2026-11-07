@@ -11,7 +11,7 @@ const multer = require('multer');
 const crypto = require('crypto');
 const { db, UPLOAD_DIR, inTransaction } = require('./lib/db');
 const { readCookie } = require('./lib/cookies');
-const { authRouter, meRouter, attachUser, cleanup: cleanupAuth, destroySession, mailMode } = require('./lib/auth');
+const { authRouter, meRouter, attachUser, cleanup: cleanupAuth, destroySession, mailMode, configWarnings } = require('./lib/auth');
 const { appTitle } = require('./lib/appTitle');
 
 const ALLOWED_EXT = { 'image/png': '.png', 'image/jpeg': '.jpg', 'image/gif': '.gif', 'image/webp': '.webp' };
@@ -530,6 +530,7 @@ app.listen(PORT, '0.0.0.0', (err) => {
   console.log(PASSWORD ? '合言葉: 有効' : '合言葉: 無効（ROOM_PASSWORD 未設定）');
   console.log(mailMode() === 'smtp' ? 'メール: SMTP で送信' : 'メール: コンソール出力（SMTP_HOST 未設定）');
   if (mailMode() === 'smtp' && !PUBLIC_URL) console.warn('警告: SMTP を使うときは PUBLIC_URL の設定が必要です。未設定のままだと、パスワード再設定のメールは送られません。.env で PUBLIC_URL（例: https://room.example.com）を設定してください');
+  for (const w of configWarnings) console.warn(w);
   cleanupAuth();
   removeUnusedIcons();
   shrinkExistingIcons().catch((err) => console.log('アイコンの縮小に失敗:', err.message));
