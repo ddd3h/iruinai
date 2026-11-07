@@ -55,32 +55,47 @@ test('reactions.js: ユーザーの入力を innerHTML に入れない。localSt
   assert.match(js, /visibilityState === 'visible'/);
 });
 
-test('音: AudioContext がなくても落ちない。操作の前・ミュート中は鳴らさない', () => {
-  const none = Reactions.makeSound({});
-  none.unlock();
-  assert.equal(none.pop(), false);
-  assert.equal(Reactions.makeSound(null).pop(), false);
+test('音: Audio がなくても落ちない。ミュート中は鳴らさない。再生が拒否されたら false', async () => {
+  assert.equal(await Reactions.makeSound({}).pop(), false);
+  assert.equal(await Reactions.makeSound(null).pop(), false);
 
-  const calls = [];
-  class FakeCtx {
-    constructor() { this.state = 'running'; this.currentTime = 0; this.destination = {}; }
-    resume() { return Promise.resolve(); }
-    createOscillator() { return { type: '', frequency: { setValueAtTime() {}, exponentialRampToValueAtTime() {} }, connect() {}, start() { calls.push('start'); }, stop() {} }; }
-    createGain() { return { gain: { setValueAtTime() {}, exponentialRampToValueAtTime() {} }, connect() {} }; }
+  const played = [];
+  let allowed = false;
+  class FakeAudio {
+    constructor(src) { this.src = src; this.currentTime = 5; }
+    play() { played.push(this.src); return allowed ? Promise.resolve() : Promise.reject(new Error('NotAllowedError')); }
   }
-  const s = Reactions.makeSound({ AudioContext: FakeCtx });
-  assert.equal(s.pop(), false); // まだ操作されていない
+  const s = Reactions.makeSound({ Audio: FakeAudio });
+  assert.equal(await s.pop(), false); // ブラウザが操作前の再生を止めている
+  allowed = true;
   s.unlock();
-  assert.equal(s.pop(), true);
+  assert.equal(await s.pop(), true);
+  assert.deepEqual(played, ['/sounds/pop.wav', '/sounds/pop.wav']);
   s.setMuted(true);
-  assert.equal(s.pop(), false);
+  assert.equal(await s.pop(), false);
+  assert.equal(played.length, 2); // ミュート中は play() も呼ばない
   s.setMuted(false);
-  assert.equal(s.pop(), true);
-  assert.equal(calls.length, 2);
+  assert.equal(await s.pop(), true);
   // 作るときに例外を投げる環境でも落ちない
-  const broken = Reactions.makeSound({ AudioContext: class { constructor() { throw new Error('x'); } } });
+  const broken = Reactions.makeSound({ Audio: class { constructor() { throw new Error('x'); } } });
   broken.unlock();
-  assert.equal(broken.pop(), false);
+  assert.equal(await broken.pop(), false);
+});
+
+test('音声ファイル: /sounds/pop.wav は正しい WAV で、サーバーから配られる', async (t) => {
+  const file = fs.readFileSync(path.join(__dirname, '../public/sounds/pop.wav'));
+  assert.equal(file.toString('ascii', 0, 4), 'RIFF');
+  assert.equal(file.toString('ascii', 8, 12), 'WAVE');
+  assert.equal(file.readUInt16LE(22), 1); // モノラル
+  assert.equal(file.readUInt32LE(24), 44100);
+  assert.equal(file.readUInt32LE(40), file.length - 44); // data の長さがファイルと合っている
+  assert.ok(file.length < 100 * 1024);
+  const srv = await startServer();
+  t.after(() => srv.stop());
+  const r = await fetch(`${srv.base}/sounds/pop.wav`);
+  assert.equal(r.status, 200);
+  assert.match(r.headers.get('content-type'), /audio\/(wav|x-wav|wave)/);
+  assert.equal((await r.arrayBuffer()).byteLength, file.length);
 });
 
 test('配信: /reactions.js は返り、スタンプ画像がなくても 404 で落ちない', async (t) => {

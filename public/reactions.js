@@ -77,41 +77,32 @@
     return wrap;
   }
 
-  // ---------- 音（Web Audio で合成。音声ファイルは持たない） ----------
-  // g にブラウザの window を渡す。AudioContext がなければ何もしない。最初の操作（unlock）より前は鳴らさない
-  function makeSound(g) {
-    const Ctor = g && (g.AudioContext || g.webkitAudioContext);
-    let ctx = null;
+  // ---------- 音（音声ファイル /sounds/pop.wav を鳴らす） ----------
+  // g にブラウザの window を渡す。Audio がなければ何もしない。
+  // pop() は Promise<boolean>（鳴らせたら true）。ブラウザは、ページを開いてから最初の操作より前の再生を止める（play() が拒否される）ので、
+  // そのときは false を返す。呼び出し側は、最初の操作のあとにもう一度鳴らす
+  const POP_SRC = '/sounds/pop.wav';
+  function makeSound(g, src = POP_SRC) {
+    const AudioCtor = g && g.Audio;
+    let audio = null;
     let muted = false;
+    const load = () => {
+      if (audio || !AudioCtor) return;
+      try { audio = new AudioCtor(src); audio.preload = 'auto'; } catch { audio = null; }
+    };
     return {
       setMuted(v) { muted = !!v; },
       isMuted() { return muted; },
-      unlock() {
-        if (!Ctor) return;
+      unlock() { load(); }, // 最初の操作で、先に読み込んでおく
+      async pop() {
+        if (muted) return false;
+        load();
+        if (!audio) return false;
         try {
-          if (!ctx) ctx = new Ctor();
-          if (ctx.state === 'suspended') Promise.resolve(ctx.resume()).catch(() => {});
-        } catch { ctx = null; }
-      },
-      // 鳴らしたら true
-      pop() {
-        if (muted || !ctx || ctx.state !== 'running') return false;
-        try {
-          const t = ctx.currentTime;
-          const osc = ctx.createOscillator();
-          const gain = ctx.createGain();
-          osc.type = 'sine';
-          osc.frequency.setValueAtTime(520, t);
-          osc.frequency.exponentialRampToValueAtTime(900, t + 0.09);
-          gain.gain.setValueAtTime(0.0001, t);
-          gain.gain.exponentialRampToValueAtTime(0.18, t + 0.015);
-          gain.gain.exponentialRampToValueAtTime(0.0001, t + 0.2);
-          osc.connect(gain);
-          gain.connect(ctx.destination);
-          osc.start(t);
-          osc.stop(t + 0.22);
+          audio.currentTime = 0;
+          await audio.play();
           return true;
-        } catch { return false; }
+        } catch { return false; } // 操作前の自動再生の制限・読み込み失敗など
       },
     };
   }
@@ -461,7 +452,7 @@
   let pendingPop = false;
   function announce(list, opening) {
     list.forEach((it, i) => showBubble(it, i * (opening ? 800 : 450), opening));
-    if (!sound.pop() && !sound.isMuted()) pendingPop = true;
+    sound.pop().then((ok) => { if (!ok && !sound.isMuted()) pendingPop = true; });
   }
 
   async function poll() {
@@ -555,7 +546,7 @@
     // 音は、最初の操作のあとから鳴らせる（ブラウザの自動再生の制限）
     const unlock = () => {
       sound.unlock();
-      if (pendingPop) setTimeout(() => { if (sound.pop() || sound.isMuted()) pendingPop = false; }, 80); // resume() の完了を少し待つ
+      if (pendingPop) sound.pop().then((ok) => { if (ok || sound.isMuted()) pendingPop = false; }); // 操作の中で呼ぶので、再生が許される
     };
     document.addEventListener('pointerdown', unlock);
     document.addEventListener('keydown', unlock);
