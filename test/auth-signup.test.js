@@ -103,10 +103,10 @@ test('コードを 5回間違えると無効になり、その後は正しいコ
   const good = codeOf(await srv.waitMail('a@example.com'));
   const bad = good === '000000' ? '111111' : '000000';
   for (let i = 0; i < 5; i++) {
-    const r = await c.post('/api/auth/verify', { email: 'a@example.com', code: bad, password: 'password123' });
+    const r = await c.post('/api/auth/verify', { code: bad });
     assert.equal(r.status, 400);
   }
-  const r = await c.post('/api/auth/verify', { email: 'a@example.com', code: good, password: 'password123' });
+  const r = await c.post('/api/auth/verify', { code: good });
   assert.equal(r.status, 400);
   assert.equal((await c.get('/api/me')).json.user, null);
 });
@@ -120,7 +120,7 @@ test('コードの期限が切れると通らない', async (t) => {
   const db = srv.openDb();
   db.prepare('UPDATE pending_signups SET expires_at = 1').run();
   db.close();
-  const r = await c.post('/api/auth/verify', { email: 'a@example.com', code: good, password: 'password123' });
+  const r = await c.post('/api/auth/verify', { code: good });
   assert.equal(r.status, 400);
   assert.match(r.json.error, /有効期限/);
 });
@@ -132,20 +132,20 @@ test('再送は 60秒空ける。再送すると古いコードは使えず、�
   await c.post('/api/auth/signup', { email: 'a@example.com', password: 'password123', new_name: 'A' });
   const first = codeOf(await srv.waitMail('a@example.com'));
 
-  // 続けての signup・resend は 429
-  assert.equal((await c.post('/api/auth/signup', { email: 'a@example.com', password: 'password123', new_name: 'A' })).status, 429);
-  assert.equal((await c.post('/api/auth/resend', { email: 'a@example.com' })).status, 429);
+  // 続けての resend は 429。別のブラウザからの signup も 429（同じブラウザの signup は resumed で、メールは送らない）
+  assert.equal((await new Client(srv.base).post('/api/auth/signup', { email: 'a@example.com', password: 'password123', new_name: 'A' })).status, 429);
+  assert.equal((await c.post('/api/auth/resend', {})).status, 429);
 
   const db = srv.openDb();
   db.prepare('UPDATE pending_signups SET sent_at = sent_at - 61000').run();
   db.close();
-  assert.equal((await c.post('/api/auth/resend', { email: 'a@example.com' })).status, 200);
+  assert.equal((await c.post('/api/auth/resend', {})).status, 200);
   const second = codeOf(await srv.waitMail('a@example.com', 2));
 
   if (first !== second) {
-    assert.equal((await c.post('/api/auth/verify', { email: 'a@example.com', code: first, password: 'password123' })).status, 400);
+    assert.equal((await c.post('/api/auth/verify', { code: first })).status, 400);
   }
-  assert.equal((await c.post('/api/auth/verify', { email: 'a@example.com', code: second, password: 'password123' })).status, 200);
+  assert.equal((await c.post('/api/auth/verify', { code: second })).status, 200);
 });
 
 test('同じ既存の人を 2人が選んだら、先に確認した 1人だけ成功する', async (t) => {
@@ -162,8 +162,8 @@ test('同じ既存の人を 2人が選んだら、先に確認した 1人だけ�
   const codeA = codeOf(await srv.waitMail('a@example.com'));
   const codeB = codeOf(await srv.waitMail('b@example.com'));
 
-  assert.equal((await a.post('/api/auth/verify', { email: 'a@example.com', code: codeA, password: 'password123' })).status, 200);
-  const rb = await b.post('/api/auth/verify', { email: 'b@example.com', code: codeB, password: 'password123' });
+  assert.equal((await a.post('/api/auth/verify', { code: codeA })).status, 200);
+  const rb = await b.post('/api/auth/verify', { code: codeB });
   assert.equal(rb.status, 400);
   assert.match(rb.json.error, /すでに使われています/);
 
@@ -187,7 +187,7 @@ test('コード確認の直前にメールが先に使われたら、新しい�
   db.prepare("INSERT INTO users (email, password_hash, person_id, created_at) VALUES ('a@example.com', 'x', ?, 0)").run(pid);
   const before = db.prepare('SELECT COUNT(*) AS n FROM people').get().n;
   db.close();
-  const r = await c.post('/api/auth/verify', { email: 'a@example.com', code, password: 'password123' });
+  const r = await c.post('/api/auth/verify', { code });
   assert.equal(r.status, 400);
   const db2 = srv.openDb();
   assert.equal(db2.prepare('SELECT COUNT(*) AS n FROM people').get().n, before);
@@ -242,7 +242,7 @@ test('GET /logout（アドレス欄から開いた = Sec-Fetch-Site: none）は�
   await c.postForm('/login', { password: 'himitsu' });
   await c.post('/api/auth/signup', { email: 'a@example.com', password: 'password123', new_name: 'A' });
   const code = codeOf(await srv.waitMail('a@example.com'));
-  await c.post('/api/auth/verify', { email: 'a@example.com', code, password: 'password123' });
+  await c.post('/api/auth/verify', { code });
   assert.ok(c.jar.has('iruinai_session') && c.jar.has('iruinai_auth'));
   const r = await c.request('GET', '/logout', undefined, { headers: { 'sec-fetch-site': 'none' } });
   assert.equal(r.status, 303);
@@ -255,14 +255,14 @@ test('GET /logout（アドレス欄から開いた = Sec-Fetch-Site: none）は�
 // ---- 修正ラウンド 1 ----
 
 const LOCK_MSG = '間違いが続いたため、このコードは使えません。10分ほど待ってから、もう一度登録してください';
-const PENDING_MSG = 'このメールアドレスは、すでに登録の手続き中です。自分で申し込んだ場合は、届いた確認コードと、そのときのパスワードを入力してください。心当たりがない場合は、10分ほど待ってからやり直してください';
+const PENDING_MSG = 'このメールアドレスは、すでに登録の手続き中です。自分で申し込んだ場合は、申し込んだブラウザで、届いた確認コードを入力してください。別のブラウザで申し込んだ場合や、心当たりがない場合は、10分ほど待ってからやり直してください';
 
 // signup → verify まで進めて、verify の応答（Set-Cookie を見る用）を返す
 async function signupAndVerify(srv, email) {
   const c = new Client(srv.base);
   assert.equal((await c.post('/api/auth/signup', { email, password: 'password123', new_name: 'A' })).status, 200);
   const code = codeOf(await srv.waitMail(email));
-  const v = await c.post('/api/auth/verify', { email, code, password: 'password123' });
+  const v = await c.post('/api/auth/verify', { code });
   assert.equal(v.status, 200);
   return v.headers.getSetCookie().find((l) => l.startsWith('iruinai_session='));
 }
@@ -288,23 +288,27 @@ test('コードを 5回間違えた後は、登録し直してもメールは再
   const good = codeOf(await srv.waitMail('a@example.com'));
   const wrong = good === '000000' ? '111111' : '000000';
   for (let i = 0; i < 4; i++) {
-    const r = await c.post('/api/auth/verify', { email: 'a@example.com', code: wrong, password: 'password123' });
+    const r = await c.post('/api/auth/verify', { code: wrong });
     assert.equal(r.status, 400);
-    assert.equal(r.json.error, `確認コードかパスワードが違います（あと ${4 - i} 回）`);
+    assert.equal(r.json.error, `確認コードが違います（あと ${4 - i} 回）`);
   }
-  const fifth = await c.post('/api/auth/verify', { email: 'a@example.com', code: wrong, password: 'password123' });
+  const fifth = await c.post('/api/auth/verify', { code: wrong });
   assert.equal(fifth.status, 400);
 
   // 正しいコードでも通らない。行は消えず、ロックされたまま残る
-  const ok = await c.post('/api/auth/verify', { email: 'a@example.com', code: good, password: 'password123' });
+  const ok = await c.post('/api/auth/verify', { code: good });
   assert.equal(ok.status, 400);
 
-  // すぐの登録は 429、61秒たっても確認待ちの行が残っているので 400。どちらもメールは増えない
-  assert.equal((await c.post('/api/auth/signup', reg)).status, 429);
+  // 申し込んだブラウザでの登録し直しは resumed（メールは送らない）。別のブラウザは、すぐなら 429、61秒たっても確認待ちの行が残っているので 400。
+  // どれもメールは増えない
+  const other = new Client(srv.base);
+  assert.deepEqual((await c.post('/api/auth/signup', reg)).json, { ok: true, resumed: true });
+  assert.equal((await other.post('/api/auth/signup', reg)).status, 429);
   const db = srv.openDb();
   db.prepare('UPDATE pending_signups SET sent_at = sent_at - 61000').run();
   db.close();
-  const again = await c.post('/api/auth/signup', reg);
+  assert.deepEqual((await c.post('/api/auth/signup', reg)).json, { ok: true, resumed: true });
+  const again = await other.post('/api/auth/signup', reg);
   assert.equal(again.status, 400);
   assert.equal(again.json.error, PENDING_MSG);
   assert.equal(srv.mailCount('a@example.com'), 1);
@@ -330,7 +334,7 @@ test('確認待ちの登録は、同じメールの別の登録で上書きで�
   assert.equal(srv.mailCount('a@example.com'), 1);
 
   // 元のコードで確認でき、パスワードも名前も最初の登録のまま
-  assert.equal((await victim.post('/api/auth/verify', { email: 'a@example.com', code, password: 'passwordAAA' })).status, 200);
+  assert.equal((await victim.post('/api/auth/verify', { code })).status, 200);
   const db2 = srv.openDb();
   const u = db2.prepare('SELECT u.password_hash, p.name FROM users u JOIN people p ON p.id = u.person_id WHERE u.email = ?').get('a@example.com');
   db2.close();
@@ -351,16 +355,16 @@ test('期限切れの確認待ちは、新しい登録で置き換えられる',
 
   assert.equal((await c.post('/api/auth/signup', { email: 'a@example.com', password: 'passwordBBB', new_name: 'B' })).status, 200);
   const code = codeOf(await srv.waitMail('a@example.com', 2));
-  assert.equal((await c.post('/api/auth/verify', { email: 'a@example.com', code, password: 'passwordBBB' })).status, 200);
+  assert.equal((await c.post('/api/auth/verify', { code })).status, 200);
   const db2 = srv.openDb();
   const u = db2.prepare('SELECT password_hash FROM users WHERE email = ?').get('a@example.com');
   db2.close();
   assert.equal(verifyPassword('passwordBBB', u.password_hash), true);
 });
 
-// ---- 最終レビュー対応: verify でもサインアップ時のパスワードを要求する ----
+// ---- verify は、コードだけを受け取る（確認待ちは、申し込んだブラウザの Cookie で決まる） ----
 
-const MISMATCH_RE = /^確認コードかパスワードが違います（あと \d 回）$/;
+const MISMATCH_RE = /^確認コードが違います（あと \d 回）$/;
 const hasSession = (res) => res.headers.getSetCookie().some((l) => l.startsWith('iruinai_session='));
 const counts = (srv) => {
   const db = srv.openDb();
@@ -374,75 +378,27 @@ const counts = (srv) => {
   return row;
 };
 
-test('verify: 正しいコードでもパスワードが違えば通らず、試行が数えられ、アカウントもセッションも作られない', async (t) => {
+test('verify: 本文の email・password は無視される。コードだけで、Cookie の確認待ちが確認できる', async (t) => {
   const srv = await startServer();
   t.after(() => srv.stop());
   const c = new Client(srv.base);
   await c.post('/api/auth/signup', { email: 'a@example.com', password: 'password123', new_name: 'A' });
   const code = codeOf(await srv.waitMail('a@example.com'));
-
-  const r = await c.post('/api/auth/verify', { email: 'a@example.com', code, password: 'other-password' });
-  assert.equal(r.status, 400);
-  assert.match(r.json.error, MISMATCH_RE);
-  assert.equal(hasSession(r), false);
-  assert.deepEqual(counts(srv), { users: 0, people: 0, sessions: 0, attempts: 1 });
-  assert.equal((await c.get('/api/me')).json.user, null);
-
-  // 正しいコードと正しいパスワードなら通る
-  const ok = await c.post('/api/auth/verify', { email: 'a@example.com', code, password: 'password123' });
+  // 別のメール・でたらめなパスワードを添えても、見られるのは Cookie の行だけ。間違いも増えない
+  const ok = await c.post('/api/auth/verify', { email: 'other@example.com', code, password: { $ne: '' } });
   assert.equal(ok.status, 200);
   assert.equal(hasSession(ok), true);
   assert.equal(ok.json.user.email, 'a@example.com');
+  assert.deepEqual(counts(srv), { users: 1, people: 1, sessions: 1, attempts: null });
 });
 
-test('verify: コードが違う場合とパスワードが違う場合で、同じ形のエラーを返す（どちらが違うかは分からない）', async (t) => {
-  const srv = await startServer();
-  t.after(() => srv.stop());
-  const c = new Client(srv.base);
-  await c.post('/api/auth/signup', { email: 'a@example.com', password: 'password123', new_name: 'A' });
-  const good = codeOf(await srv.waitMail('a@example.com'));
-  const wrong = good === '000000' ? '111111' : '000000';
-
-  const wrongCode = await c.post('/api/auth/verify', { email: 'a@example.com', code: wrong, password: 'password123' });
-  const wrongPassword = await c.post('/api/auth/verify', { email: 'a@example.com', code: good, password: 'other-password' });
-  const wrongBoth = await c.post('/api/auth/verify', { email: 'a@example.com', code: wrong, password: 'other-password' });
-  for (const r of [wrongCode, wrongPassword, wrongBoth]) {
-    assert.equal(r.status, 400);
-    assert.match(r.json.error, MISMATCH_RE);
-  }
-  assert.equal(wrongCode.json.error, '確認コードかパスワードが違います（あと 4 回）');
-  assert.equal(wrongPassword.json.error, '確認コードかパスワードが違います（あと 3 回）');
-  assert.equal(wrongBoth.json.error, '確認コードかパスワードが違います（あと 2 回）');
-});
-
-test('verify: パスワードの間違いも 5回でロックされ、その後は正しい組み合わせでも通らない', async (t) => {
+test('verify: コードが文字列・6桁でないときも、500 ではなく 400 で、試行として数える', async (t) => {
   const srv = await startServer();
   t.after(() => srv.stop());
   const c = new Client(srv.base);
   await c.post('/api/auth/signup', { email: 'a@example.com', password: 'password123', new_name: 'A' });
   const code = codeOf(await srv.waitMail('a@example.com'));
-  let last;
-  for (let i = 0; i < 5; i++) last = await c.post('/api/auth/verify', { email: 'a@example.com', code, password: 'other-password' });
-  assert.equal(last.json.error, LOCK_MSG);
-  const ok = await c.post('/api/auth/verify', { email: 'a@example.com', code, password: 'password123' });
-  assert.equal(ok.status, 400);
-  assert.equal(ok.json.error, LOCK_MSG);
-  assert.equal(hasSession(ok), false);
-  assert.equal(counts(srv).users, 0);
-});
-
-test('verify: パスワードがない・文字列でないときも、500 ではなく 400 で、試行として数える', async (t) => {
-  const srv = await startServer();
-  t.after(() => srv.stop());
-  const c = new Client(srv.base);
-  await c.post('/api/auth/signup', { email: 'a@example.com', password: 'password123', new_name: 'A' });
-  const code = codeOf(await srv.waitMail('a@example.com'));
-  const bodies = [
-    { email: 'a@example.com', code },
-    { email: 'a@example.com', code, password: 12345678 },
-    { email: 'a@example.com', code, password: { $ne: '' } },
-    { email: 'a@example.com', code, password: ['password123'] },
-  ];
+  const bodies = [{}, { code: null }, { code: ['x'] }, { code: { $ne: '' } }];
   for (const body of bodies) {
     const r = await c.post('/api/auth/verify', body);
     assert.equal(r.status, 400, JSON.stringify(body));
@@ -450,32 +406,7 @@ test('verify: パスワードがない・文字列でないときも、500 で�
   }
   assert.equal(counts(srv).attempts, 4);
   assert.equal(counts(srv).users, 0);
-  assert.equal((await c.post('/api/auth/verify', { email: 'a@example.com', code, password: 'password123' })).status, 200);
-});
-
-test('なりすまし登録（pre-hijacking）: 他人のメールで自分のパスワードで登録されても、本人は自分のパスワードでは確認できない', async (t) => {
-  const srv = await startServer();
-  t.after(() => srv.stop());
-  const mallory = new Client(srv.base);
-  assert.equal((await mallory.post('/api/auth/signup', { email: 'victim@example.com', password: 'mallory-P1-password', new_name: 'マロリー' })).status, 200);
-  const code = codeOf(await srv.waitMail('victim@example.com')); // 本人の受信箱に届くコード
-
-  // 本人がコードと「自分のパスワード」を入れても通らない。ログインもされない
-  const victim = new Client(srv.base);
-  const r = await victim.post('/api/auth/verify', { email: 'victim@example.com', code, password: 'victim-P2-password' });
-  assert.equal(r.status, 400);
-  assert.equal(hasSession(r), false);
-  assert.equal((await victim.get('/api/me')).json.user, null);
-  assert.equal(counts(srv).users, 0);
-
-  // 登録を始めた側は、P1 で確認できる
-  const ok = await mallory.post('/api/auth/verify', { email: 'victim@example.com', code, password: 'mallory-P1-password' });
-  assert.equal(ok.status, 200);
-  const db = srv.openDb();
-  const u = db.prepare('SELECT password_hash FROM users WHERE email = ?').get('victim@example.com');
-  db.close();
-  assert.equal(verifyPassword('mallory-P1-password', u.password_hash), true);
-  assert.equal(verifyPassword('victim-P2-password', u.password_hash), false);
+  assert.equal((await c.post('/api/auth/verify', { code })).status, 200);
 });
 
 test('verify: 確認の途中で予期しないエラーが起きても、内部のエラー文は返さない', async (t) => {
@@ -485,10 +416,13 @@ test('verify: 確認の途中で予期しないエラーが起きても、内部
   const db = srv.openDb();
   const { hashPassword, sha256 } = require('../lib/secrets');
   const now = Date.now();
-  db.prepare(`INSERT INTO pending_signups (email, password_hash, person_id, new_name, new_color, code_hash, expires_at, attempts, sent_at)
-    VALUES ('a@example.com', ?, NULL, NULL, NULL, ?, ?, 0, ?)`).run(hashPassword('password123'), sha256('123456'), now + 600000, now);
+  db.prepare(`INSERT INTO pending_signups (email, password_hash, person_id, new_name, new_color, code_hash, expires_at, attempts, sent_at, browser_hash)
+    VALUES ('a@example.com', ?, NULL, NULL, NULL, ?, ?, 0, ?, ?)`).run(hashPassword('password123'), sha256('123456'), now + 600000, now, sha256('seeded-token'));
   db.close();
-  const r = await new Client(srv.base).post('/api/auth/verify', { email: 'a@example.com', code: '123456', password: 'password123' });
+  const c = new Client(srv.base);
+  c.jar.set('iruinai_signup', 'seeded-token');
+  c.paths.set('iruinai_signup', '/api/auth');
+  const r = await c.post('/api/auth/verify', { code: '123456' });
   assert.equal(r.status, 500);
   assert.equal(r.json.error, 'サーバーでエラーが起きました');
   assert.doesNotMatch(r.text, /constraint|people|SQLITE/i);
@@ -545,7 +479,7 @@ test('登録の入力が文字列・整数でなければ 400（[object Object] 
   db.close();
 });
 
-test('古い形式の DB（resend_count 列がない pending_signups）でも起動でき、列が足されて再送が使える', async (t) => {
+test('古い形式の DB（resend_count・browser_hash 列がない pending_signups）でも起動でき、列と索引が足される。古い行は確認できないまま期限で消える', async (t) => {
   const { DatabaseSync } = require('node:sqlite');
   const path = require('node:path');
   const { hashPassword, sha256 } = require('../lib/secrets');
@@ -564,10 +498,44 @@ test('古い形式の DB（resend_count 列がない pending_signups）でも起
   t.after(() => srv.stop());
   const db = srv.openDb();
   const cols = db.prepare('PRAGMA table_info(pending_signups)').all();
-  const col = cols.find((c) => c.name === 'resend_count');
-  assert.ok(col, 'resend_count 列が足されている');
-  assert.equal(col.notnull, 1);
+  const resend = cols.find((c) => c.name === 'resend_count');
+  assert.ok(resend, 'resend_count 列が足されている');
+  assert.equal(resend.notnull, 1);
+  const browser = cols.find((c) => c.name === 'browser_hash');
+  assert.ok(browser, 'browser_hash 列が足されている');
+  assert.equal(browser.notnull, 0); // 古い行は NULL のまま
   assert.equal(db.prepare("SELECT resend_count FROM pending_signups WHERE email = 'a@example.com'").get().resend_count, 0);
+  assert.equal(db.prepare("SELECT browser_hash FROM pending_signups WHERE email = 'a@example.com'").get().browser_hash, null);
+  const indexed = db.prepare('PRAGMA index_list(pending_signups)').all()
+    .some((ix) => db.prepare(`PRAGMA index_info(${JSON.stringify(ix.name)})`).all().some((c) => c.name === 'browser_hash'));
+  assert.ok(indexed, 'browser_hash の索引がある');
   db.close();
-  assert.equal((await new Client(srv.base).post('/api/auth/resend', { email: 'a@example.com' })).status, 200);
+
+  // 古い行は、どの Cookie でも確認も再送もできない（期限の 10分で消える）。同じメールの別の登録も、期限までは断られる
+  const c = new Client(srv.base);
+  c.jar.set('iruinai_signup', 'some-token');
+  c.paths.set('iruinai_signup', '/api/auth');
+  assert.equal((await c.post('/api/auth/verify', { code: '123456' })).status, 400);
+  assert.equal((await c.post('/api/auth/resend', {})).status, 400);
+  assert.equal((await c.get('/api/auth/pending')).json.pending, null);
+  assert.equal((await new Client(srv.base).post('/api/auth/signup', { email: 'a@example.com', password: 'password123', new_name: 'A' })).status, 400);
+});
+
+test('browser_hash の追加は何度起動しても同じ結果になる（列があるときは何もしない）', () => {
+  const { execFileSync } = require('node:child_process');
+  const fs = require('node:fs');
+  const os = require('node:os');
+  const path = require('node:path');
+  const { DatabaseSync } = require('node:sqlite');
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'iruinai-test-'));
+  try {
+    const run = () => execFileSync(process.execPath, ['-e', "require('./lib/db')"], { cwd: path.join(__dirname, '..'), env: { ...process.env, DATA_DIR: dir } });
+    run();
+    run(); // 2回目に「列が重複」で落ちない
+    const db = new DatabaseSync(path.join(dir, 'app.db'));
+    assert.equal(db.prepare('PRAGMA table_info(pending_signups)').all().filter((c) => c.name === 'browser_hash').length, 1);
+    db.close();
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
 });

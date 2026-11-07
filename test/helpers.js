@@ -129,18 +129,36 @@ async function startServer(extraEnv = {}, { startTimeout = 5000, seed, fakeClock
   };
 }
 
-// Cookie を覚える fetch ラッパー
+// Cookie の Path の照合（RFC 6265 の path-match）。Path=/api/auth の Cookie は、/api/auth と /api/auth/… にだけ送る
+function pathMatches(requestPath, cookiePath) {
+  if (requestPath === cookiePath) return true;
+  if (!requestPath.startsWith(cookiePath)) return false;
+  return cookiePath.endsWith('/') || requestPath[cookiePath.length] === '/';
+}
+
+// Cookie を覚える fetch ラッパー。jar は名前 → 値の Map。Path は別の paths に控える（なければ `/`）
 class Client {
   constructor(base) {
     this.base = base;
     this.jar = new Map();
+    this.paths = new Map();
     this.user = null;
+  }
+
+  // url に送る Cookie ヘッダー（Path が合うものだけ。クエリは Path に関係しない）
+  cookieHeader(url) {
+    const reqPath = url.split(/[?#]/)[0];
+    return [...this.jar]
+      .filter(([k]) => pathMatches(reqPath, this.paths.get(k) || '/'))
+      .map(([k, v]) => `${k}=${v}`)
+      .join('; ');
   }
 
   // headers: 追加のリクエストヘッダー。raw: true なら body（文字列または Buffer）をそのまま送る（壊れた本文の確認用。content-type は headers で指定）
   async request(method, url, body, { form = false, headers: extra = {}, raw = false } = {}) {
     const headers = {};
-    if (this.jar.size) headers.cookie = [...this.jar].map(([k, v]) => `${k}=${v}`).join('; ');
+    const cookie = this.cookieHeader(url);
+    if (cookie) headers.cookie = cookie;
     let payload;
     if (body !== undefined) {
       if (raw) {
@@ -163,8 +181,14 @@ class Client {
       const name = pair.slice(0, i).trim();
       const value = pair.slice(i + 1).trim();
       const gone = attrs.some((a) => a.trim().toLowerCase() === 'max-age=0');
-      if (gone || value === '') this.jar.delete(name);
-      else this.jar.set(name, value);
+      const cookiePath = attrs.map((a) => a.trim()).find((a) => a.toLowerCase().startsWith('path='))?.slice(5) || '/';
+      if (gone || value === '') {
+        this.jar.delete(name);
+        this.paths.delete(name);
+      } else {
+        this.jar.set(name, value);
+        this.paths.set(name, cookiePath);
+      }
     }
     const text = await res.text();
     let json = null;
@@ -189,7 +213,7 @@ async function registerUser(srv, { email, password = 'password123', person }) {
   assert.equal(r.status, 200, JSON.stringify(r.json));
   const mail = await srv.waitMail(email.trim().toLowerCase(), before + 1);
   const code = mail.text.match(/確認コード: (\d{6})/)[1];
-  const v = await c.post('/api/auth/verify', { email, code, password });
+  const v = await c.post('/api/auth/verify', { code }); // 申し込んだブラウザ（Cookie）だけで確認できる。メールもパスワードも送らない
   assert.equal(v.status, 200, JSON.stringify(v.json));
   c.user = v.json.user;
   return c;

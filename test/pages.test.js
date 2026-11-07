@@ -65,18 +65,33 @@ test('account.js が参照する要素は account.html にある', () => {
     assert.ok(m, `<form id="${id}"> がない`);
     return m[0];
   };
-  // 確認コードの画面は自分のメール欄を持つ（画面を離れても、コード入力に戻れるように）
-  assert.match(block('view-code'), /name="email"/);
-  // 確認コードの画面はパスワードも持つ（verify はサインアップ時のパスワードを要求する）
-  const pw = block('view-code').match(/<input[^>]*id="codePassword"[^>]*>/);
-  assert.ok(pw, 'view-code に id="codePassword" の入力がない');
-  assert.match(pw[0], /name="password"/);
-  assert.match(pw[0], /type="password"/);
-  assert.match(pw[0], /autocomplete="current-password"/);
-  assert.match(pw[0], /\brequired\b/);
-  // パスワードは変数に持つだけで、ブラウザの保存領域には書かない（sessionStorage にはメールアドレスだけ）
-  assert.doesNotMatch(js, /(?:session|local)Storage\.setItem\([^)]*assword/i);
-  assert.match(js, /post\('\/api\/auth\/verify', \{[^}]*password:/);
-  // 登録の画面から、確認コードの入力へ行ける
-  assert.match(block('view-signup'), /data-go="code"/);
+  // 確認コードの画面は、6桁のコードだけを尋ねる（メールもパスワードも入れない。確認待ちは、申し込んだブラウザの Cookie で決まる）
+  const code = block('view-code');
+  assert.deepEqual([...code.matchAll(/<input\b[^>]*>/g)].map((m) => m[0].match(/\bname="([^"]+)"/)?.[1]), ['code']);
+  assert.doesNotMatch(code, /type="(?:email|password)"/);
+  assert.doesNotMatch(code, /name="(?:email|password)"/);
+  assert.doesNotMatch(code, /codePassword/);
+  const codeInput = code.match(/<input[^>]*name="code"[^>]*>/)[0];
+  assert.match(codeInput, /inputmode="numeric"/);
+  assert.match(codeInput, /autocomplete="one-time-code"/);
+  assert.match(codeInput, /maxlength="6"/);
+  assert.match(codeInput, /\brequired\b/);
+  // 残るのは、宛先の案内・登録する・再送（カウントダウンつき）・入力し直す（登録の画面へ戻る）
+  assert.match(code, /id="codeSent"/);
+  assert.match(code, /<button type="submit"[^>]*>登録する<\/button>/);
+  assert.match(code, /id="resendBtn"/);
+  assert.match(code, /data-go="signup"[^>]*>入力し直す</);
+  // 「確認コードを入力する」のリンクは、どの画面にもない
+  assert.doesNotMatch(html, /data-go="code"/);
+  assert.doesNotMatch(html, /確認コードを入力する/);
+  // ブラウザの保存領域（sessionStorage・localStorage）は、パスワードにもメールにも使わない。そもそも一切触らない
+  assert.doesNotMatch(js, /sessionStorage|localStorage/);
+  // 確認の要求の本文は、コードだけ（メールもパスワードも送らない）。再送の本文は空
+  const verify = js.match(/post\('\/api\/auth\/verify', (\{[^}]*\})\)/);
+  assert.ok(verify, 'verify の呼び出しが見つからない');
+  assert.equal(verify[1].replace(/\s+/g, ' '), '{ code: f.code.value }');
+  assert.match(js, /post\('\/api\/auth\/resend', \{\}\)/);
+  assert.doesNotMatch(js, /signupPassword|codePassword|pendingEmail/);
+  // ページを開いたときは、確認待ち（Cookie の行）があれば、コード入力の画面を直接出す
+  assert.match(js, /fetch\('\/api\/auth\/pending'/);
 });

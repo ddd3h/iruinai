@@ -11,7 +11,7 @@ async function loggedIn(srv, email = 'a@example.com') {
   assert.equal((await c.postForm('/login', { password: PASS })).status, 303);
   assert.equal((await c.post('/api/auth/signup', { email, password: 'password123', new_name: 'A' })).status, 200);
   const code = (await srv.waitMail(email)).text.match(/確認コード: (\d{6})/)[1];
-  assert.equal((await c.post('/api/auth/verify', { email, code, password: 'password123' })).status, 200);
+  assert.equal((await c.post('/api/auth/verify', { code })).status, 200);
   assert.ok(c.jar.has('iruinai_auth') && c.jar.has('iruinai_session'));
   return c;
 }

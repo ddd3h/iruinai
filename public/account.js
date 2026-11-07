@@ -3,48 +3,59 @@
   const views = [...document.querySelectorAll('[id^="view-"]')];
   let resendTimer;
 
-  // 確認待ちのメールアドレスは、再読み込みやタブの復元のあとでもコード入力に戻れるよう sessionStorage にも残す。
-  // 保存できない環境（プライベートモードなど）でも動くように、読み書きは必ず try/catch で囲む
-  const PENDING_KEY = 'iruinai_pending_email';
-  function readPending() {
-    try { return sessionStorage.getItem(PENDING_KEY) || ''; } catch { return ''; }
-  }
-  let pendingEmail = readPending();
-  function setPending(email) {
-    pendingEmail = email;
-    try {
-      if (email) sessionStorage.setItem(PENDING_KEY, email);
-      else sessionStorage.removeItem(PENDING_KEY);
-    } catch { /* 保存できなくても、このページの中では覚えている */ }
-  }
+  // 確認コードの画面は、メールもパスワードも尋ねず、6桁のコードだけを受け取る。
+  // どの確認待ちかは、申し込んだブラウザの Cookie（HttpOnly）でサーバーが決める。だから、ここでは何も覚えておかず、
+  // 再読み込みしたときは、サーバーに聞く（GET /api/auth/pending）。メールもパスワードも、ブラウザの保存領域には残さない
+  const LOCKED_TEXT = '間違いが続いたため、このコードは使えません。10分ほど待ってから、もう一度登録してください';
 
-  // 登録で入れたパスワードは、このページを開いている間だけ変数に持つ（確認コードの画面に入れておくため）。
-  // sessionStorage / localStorage には絶対に残さない。再読み込みしたら消えるので、そのときは入力し直してもらう
-  let signupPassword = '';
-
-  // fresh は「いま登録して、確認メールを送った直後」のとき true（そうでなければ、メールを送ったとは言わない）
-  function show(name, fresh = false) {
+  function show(name) {
     for (const v of views) v.hidden = v.id !== 'view-' + name;
     const cur = $('#view-' + name);
     cur.querySelectorAll('[data-error]').forEach((e) => { e.textContent = ''; });
-    let first = cur.querySelector('input:not([type=radio]):not([type=color]):not(:disabled)');
-    if (name === 'code') {
-      const saved = pendingEmail || readPending();
-      if (saved) cur.email.value = saved;
-      $('#codeSent').textContent = fresh && saved
-        ? `${saved} に6桁のコードを送りました（10分間有効）。`
-        : '届いた6桁のコードと、登録のときに決めたパスワードを入力してください（10分間有効）。';
-      if (signupPassword && !$('#codePassword').value) $('#codePassword').value = signupPassword;
-      if (cur.email.value) first = cur.code; // メールが入っていれば、コードの欄から始める
+    cur.querySelector('input:not([type=radio]):not([type=color]):not(:disabled)')?.focus();
+  }
+
+  // コード入力の画面を出す。email は確認コードを送った先。resendIn は再送できるまでの秒数
+  // fresh: いま申し込んで確認メールを送った直後。resumed: 申し込み済みの手続きに戻ってきた（メールは送り直していない）
+  function showCode({ email, resendIn = 60, locked = false, fresh = false, resumed = false }) {
+    $('#view-code').code.value = '';
+    show('code');
+    $('#codeSent').textContent = fresh
+      ? `${email} に6桁のコードを送りました（10分間有効）。届いたら、このブラウザで入力してください。`
+      : resumed
+        ? `${email} には、すでに確認コードを送ってあります。届いた6桁のコードを入力してください。申し込みの内容（パスワードなど）は、最初に送ったものが使われます。`
+        : `${email} に送った6桁のコードを入力してください。コードは、申し込んだこのブラウザでだけ入力できます。`;
+    if (locked) $('#view-code [data-error]').textContent = LOCKED_TEXT; // show() が消すので、そのあとで出す
+    startCountdown(resendIn);
+  }
+
+  // サーバーが覚えているこのブラウザの確認待ち（なければ null）
+  async function fetchPending() {
+    try {
+      const res = await fetch('/api/auth/pending');
+      if (!res.ok) return null;
+      return (await res.json())?.pending || null;
+    } catch {
+      return null;
     }
-    first?.focus();
+  }
+
+  function showPending(p, flags = {}) {
+    const left = Math.ceil((p.resend_available_at - Date.now()) / 1000); // 端末の時計がずれていても、0〜60秒に収める
+    showCode({ email: p.email, resendIn: Number.isFinite(left) ? Math.min(60, Math.max(0, left)) : 60, locked: !!p.locked, ...flags });
+  }
+
+  // 確認待ちがなくなっていた（期限切れ・別のブラウザ・消去など）。登録の画面に戻して、理由を見せる
+  function backToSignup(message) {
+    show('signup');
+    $('#view-signup [data-error]').textContent = message;
   }
 
   async function post(url, body) {
     const res = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
     const data = await res.json().catch(() => ({}));
     if (res.status === 401 && !data.needLogin) { location.href = '/login'; throw new Error('合言葉を入力してください'); }
-    if (!res.ok) throw new Error(data.error || '失敗しました');
+    if (!res.ok) throw Object.assign(new Error(data.error || '失敗しました'), { noPending: !!data.noPending });
     return data;
   }
 
@@ -122,29 +133,30 @@
     const body = { email: f.email.value, password: f.password.value };
     if (f.mode.value === 'existing') body.person_id = Number(f.person_id.value);
     else { body.new_name = f.new_name.value; body.new_color = f.new_color.value; }
-    await post('/api/auth/signup', body);
-    setPending(f.email.value.trim());
-    signupPassword = f.password.value;
-    $('#view-code').code.value = '';
-    $('#codePassword').value = signupPassword;
-    show('code', true);
-    startCountdown();
+    const data = await post('/api/auth/signup', body);
+    // 申し込み直し（resumed）のときは、再送までの本当の残り時間と、ロックの有無をサーバーに聞く
+    const p = data.resumed ? await fetchPending() : null;
+    if (p) showPending(p, { resumed: true });
+    else showCode({ email: f.email.value.trim().toLowerCase(), fresh: !data.resumed, resumed: !!data.resumed });
   });
 
-  // コード確認
+  // コード確認。本文はコードだけ
   onSubmit('code', async (f) => {
-    await post('/api/auth/verify', { email: f.email.value.trim(), code: f.code.value, password: f.password.value });
-    setPending('');
-    signupPassword = '';
-    f.password.value = '';
+    try {
+      await post('/api/auth/verify', { code: f.code.value });
+    } catch (err) {
+      if (err.noPending) return backToSignup(err.message);
+      throw err;
+    }
     location.href = '/';
   });
   $('#resendBtn').addEventListener('click', async () => {
     try {
-      await post('/api/auth/resend', { email: $('#view-code').email.value.trim() });
+      await post('/api/auth/resend', {});
       $('#view-code [data-error]').textContent = '';
       startCountdown();
     } catch (err) {
+      if (err.noPending) return backToSignup(err.message);
       $('#view-code [data-error]').textContent = err.message;
     }
   });
@@ -169,7 +181,15 @@
       if (me?.user) { location.href = '/'; return; }
     }
     syncPersonMode();
-    show(isReset && token ? 'reset' : 'login'); // 先に画面を出す。/api/people が壊れていても、ログインや再設定は使える
+    // 先に画面を出す。/api/people が壊れていても、ログインや再設定は使える。
+    // メールのリセットリンク（/reset?token=…）が先。そうでなければ、確認待ちがあればコード入力の画面、なければログイン
+    if (isReset && token) {
+      show('reset');
+    } else {
+      const pending = await fetchPending();
+      if (pending) showPending(pending);
+      else show('login');
+    }
     await loadExisting();
   })();
 })();

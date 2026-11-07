@@ -23,7 +23,7 @@ const rewind = (srv) => {
   db.prepare('UPDATE pending_signups SET sent_at = sent_at - 61000').run();
   db.close();
 };
-const verify = (c, code, password = 'password123') => c.post('/api/auth/verify', { email: EMAIL, code, password });
+const verify = (c, code) => c.post('/api/auth/verify', { code });
 
 test('再送しても間違いの回数は戻らない。再送後の 1回の間違いで、行がロックされる', async (t) => {
   const srv = await startServer();
@@ -36,7 +36,7 @@ test('再送しても間違いの回数は戻らない。再送後の 1回の間
   assert.equal(row(srv).attempts, 4);
 
   rewind(srv);
-  assert.equal((await c.post('/api/auth/resend', { email: EMAIL })).status, 200);
+  assert.equal((await c.post('/api/auth/resend', {})).status, 200);
   const second = codeOf(await srv.waitMail(EMAIL, 2));
   assert.equal(row(srv).attempts, 4); // 再送で 0 に戻らない
 
@@ -64,7 +64,7 @@ test('ロックされた行の再送は、ロックの案内を返し、メー�
 
   rewind(srv);
   const before = row(srv);
-  const r = await c.post('/api/auth/resend', { email: EMAIL });
+  const r = await c.post('/api/auth/resend', {});
   assert.equal(r.status, 400);
   assert.equal(r.json.error, LOCK_MSG);
   await sleep(200);
@@ -81,13 +81,13 @@ test('再送は 1つの登録につき 3回まで。4回目は断られ、メー
   assert.equal(row(srv).resend_count, 0); // 新しい登録は 0 から
   for (let n = 1; n <= 3; n++) {
     rewind(srv);
-    const r = await c.post('/api/auth/resend', { email: EMAIL });
+    const r = await c.post('/api/auth/resend', {});
     assert.equal(r.status, 200, `resend ${n}`);
     await srv.waitMail(EMAIL, n + 1);
     assert.equal(row(srv).resend_count, n);
   }
   rewind(srv);
-  const r = await c.post('/api/auth/resend', { email: EMAIL });
+  const r = await c.post('/api/auth/resend', {});
   assert.equal(r.status, 429);
   assert.equal(r.json.error, CAP_MSG);
   await sleep(200);
@@ -106,7 +106,7 @@ test('登録し直すと再送の回数は 0 から数え直す（期限切れ�
   await c.post('/api/auth/signup', REG);
   await srv.waitMail(EMAIL);
   rewind(srv);
-  assert.equal((await c.post('/api/auth/resend', { email: EMAIL })).status, 200);
+  assert.equal((await c.post('/api/auth/resend', {})).status, 200);
   assert.equal(row(srv).resend_count, 1);
   const db = srv.openDb();
   db.prepare('UPDATE pending_signups SET expires_at = 1').run();
@@ -123,7 +123,7 @@ test('再送を同時に 2回送っても、メールは 1通だけ（二重ク�
   await c.post('/api/auth/signup', REG);
   await srv.waitMail(EMAIL);
   rewind(srv);
-  const rs = await Promise.all([c.post('/api/auth/resend', { email: EMAIL }), c.post('/api/auth/resend', { email: EMAIL })]);
+  const rs = await Promise.all([c.post('/api/auth/resend', {}), c.post('/api/auth/resend', {})]);
   assert.deepEqual(rs.map((r) => r.status).sort(), [200, 429]);
   await srv.waitMail(EMAIL, 2);
   await sleep(200);
@@ -152,16 +152,19 @@ test('メールの送信を待つ間も二重に通らない。送信に失敗�
   t.after(() => smtp.close());
   const srv = await startServer({ SMTP_HOST: '127.0.0.1', SMTP_PORT: String(smtp.port) });
   t.after(() => srv.stop());
-  // SMTP では登録の時点でメールが失敗して行が消えるので、確認待ちの行を直接入れる
+  // SMTP では登録の時点でメールが失敗して行が消えるので、確認待ちの行を直接入れる（申し込んだブラウザの Cookie も用意する）
   const now = Date.now();
+  const token = 'seeded-browser-token';
   const db = srv.openDb();
-  db.prepare(`INSERT INTO pending_signups (email, password_hash, person_id, new_name, new_color, code_hash, expires_at, attempts, sent_at)
-    VALUES (?, ?, NULL, 'A', '#4f7cff', ?, ?, 2, ?)`).run(EMAIL, hashPassword('password123'), sha256('123456'), now + 5 * 60 * 1000, now - 120000);
+  db.prepare(`INSERT INTO pending_signups (email, password_hash, person_id, new_name, new_color, code_hash, expires_at, attempts, sent_at, browser_hash)
+    VALUES (?, ?, NULL, 'A', '#4f7cff', ?, ?, 2, ?, ?)`).run(EMAIL, hashPassword('password123'), sha256('123456'), now + 5 * 60 * 1000, now - 120000, sha256(token));
   db.close();
   const before = row(srv);
 
   const c = new Client(srv.base);
-  const rs = await Promise.all([c.post('/api/auth/resend', { email: EMAIL }), c.post('/api/auth/resend', { email: EMAIL })]);
+  c.jar.set('iruinai_signup', token);
+  c.paths.set('iruinai_signup', '/api/auth');
+  const rs = await Promise.all([c.post('/api/auth/resend', {}), c.post('/api/auth/resend', {})]);
   // 1つ目は送信を試みて失敗（502）、2つ目は送信中の予約に引っかかる（429）
   assert.deepEqual(rs.map((r) => r.status).sort(), [429, 502]);
   assert.equal(rs.find((r) => r.status === 502).json.error, 'メールを送れませんでした');
