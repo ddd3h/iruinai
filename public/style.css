@@ -656,3 +656,111 @@ body.account-page { min-height: 100vh; display: flex; align-items: center; justi
 .account-card .btn:disabled { opacity: .5; cursor: default; }
 .account-links { display: flex; justify-content: space-between; margin: 12px 0 0; font-size: 13px; }
 .account-links a { color: var(--muted); }
+
+/* ---------- 反応（スタンプ・コメント・通知） ---------- */
+.stamp { display: inline-flex; flex: none; width: var(--stamp-size, 24px); height: var(--stamp-size, 24px); }
+.stamp svg, .stamp img { width: 100%; height: 100%; object-fit: contain; display: block; }
+
+.rx-section { margin-top: 14px; padding-top: 12px; border-top: 1px solid var(--border); }
+.rx-stamps { display: flex; flex-wrap: wrap; gap: 6px; }
+.rx-stamp-btn {
+  display: inline-flex; align-items: center; justify-content: center; gap: 4px;
+  min-width: 44px; height: 40px; padding: 0 8px;
+  border: 1.5px solid var(--border); border-radius: 999px; background: var(--surface);
+  font: inherit; font-size: 12px; font-weight: 700; color: var(--muted); cursor: pointer;
+  transition: background-color .15s, border-color .15s, transform .1s;
+}
+.rx-stamp-btn:hover { background: var(--soft); }
+.rx-stamp-btn:active { transform: scale(.94); }
+.rx-stamp-btn:focus-visible { outline: none; box-shadow: 0 0 0 3px rgba(79, 124, 255, .35); }
+.rx-stamp-btn[aria-pressed="true"] { background: var(--soft); border-color: var(--primary); color: var(--primary); }
+.rx-count { min-width: 1ch; }
+
+.rx-comment { display: flex; align-items: center; gap: 8px; margin-top: 10px; }
+.rx-comment input { flex: 1; min-width: 0; font: inherit; font-size: 16px; padding: 8px 12px; border: 1.5px solid var(--border); border-radius: 12px; background: var(--surface); color: var(--text); }
+.rx-comment input:focus { outline: none; border-color: var(--primary); box-shadow: 0 0 0 3px rgba(79, 124, 255, .2); }
+.rx-left { font-size: 12px; color: var(--muted); min-width: 2ch; text-align: right; }
+.rx-send { flex: none; }
+
+.rx-list { list-style: none; margin: 10px 0 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+.rx-item { display: flex; align-items: center; gap: 8px; font-size: 14px; }
+.rx-dot { flex: none; width: 10px; height: 10px; border-radius: 50%; }
+.rx-who { flex: none; font-weight: 700; font-size: 13px; }
+.rx-body { min-width: 0; word-break: break-word; background: var(--soft); border-radius: 12px; padding: 4px 10px; }
+.rx-del { margin-left: auto; flex: none; width: 28px; height: 28px; border: none; border-radius: 50%; background: transparent; color: var(--muted); font-size: 16px; line-height: 1; cursor: pointer; }
+.rx-del:hover { background: var(--bg); color: var(--danger); }
+.rx-del:focus-visible { outline: none; box-shadow: 0 0 0 3px rgba(79, 124, 255, .35); }
+.rx-error { margin-top: 6px; }
+
+/* カレンダー上の反応数 */
+.fc-event { position: relative; }
+.rx-badge {
+  position: absolute; right: 4px; bottom: 3px; display: inline-flex; align-items: center; gap: 2px;
+  height: 16px; padding: 0 6px 0 4px; border-radius: 999px;
+  background: rgba(255, 255, 255, .94); color: #4a5070; font-size: 10px; font-weight: 800; line-height: 1;
+  box-shadow: 0 1px 3px rgba(20, 30, 70, .2); pointer-events: none;
+}
+.rx-badge svg { width: 10px; height: 10px; }
+.fc-daygrid-event .rx-badge { top: 50%; bottom: auto; transform: translateY(-50%); }
+
+/* ベル */
+.bell-btn { position: relative; }
+.bell-badge {
+  position: absolute; top: 1px; right: -1px; min-width: 16px; height: 16px; padding: 0 4px;
+  border-radius: 999px; background: var(--danger); color: #fff; font-size: 10px; font-weight: 800; line-height: 16px; text-align: center;
+  box-shadow: 0 0 0 2px var(--surface);
+}
+.bell-panel {
+  position: fixed; top: 64px; right: 16px; z-index: 50;
+  width: min(380px, calc(100vw - 32px)); max-height: min(70vh, 520px); overflow: auto;
+  background: var(--surface); border: 1px solid var(--border); border-radius: 16px; box-shadow: var(--shadow-md);
+}
+.bell-panel:focus { outline: none; }
+.bell-head { position: sticky; top: 0; display: flex; align-items: center; gap: 12px; padding: 12px 14px; background: var(--surface); border-bottom: 1px solid var(--border); }
+.bell-head strong { flex: 1; font-size: 15px; }
+.bell-sound { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; color: var(--muted); cursor: pointer; }
+.bell-close { width: 32px; height: 32px; border: none; border-radius: 50%; background: transparent; color: var(--muted); font-size: 18px; cursor: pointer; }
+.bell-close:hover { background: var(--bg); color: var(--text); }
+.bell-list { list-style: none; margin: 0; padding: 6px; }
+.bell-empty { padding: 20px 10px; text-align: center; color: var(--muted); font-size: 13px; }
+.bell-row { display: flex; align-items: flex-start; gap: 10px; width: 100%; padding: 10px; border: none; border-radius: 12px; background: transparent; font: inherit; text-align: left; color: var(--text); cursor: pointer; }
+.bell-row:hover { background: var(--bg); }
+.bell-row:focus-visible { outline: none; box-shadow: 0 0 0 3px rgba(79, 124, 255, .35); }
+.bell-row.unread { background: var(--soft); }
+.bell-row .rx-dot { margin-top: 6px; }
+.bell-main { display: flex; flex-direction: column; gap: 2px; min-width: 0; flex: 1; }
+.bell-head-line { display: flex; align-items: center; gap: 6px; font-size: 14px; }
+.bell-when { margin-left: auto; font-size: 11px; color: var(--muted); white-space: nowrap; }
+.bell-body { word-break: break-word; font-size: 14px; }
+.bell-target { font-size: 12px; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* 新着の吹き出し */
+.rx-bubble {
+  position: fixed; z-index: 60; transform: translate(-50%, calc(-100% - 8px)); pointer-events: none;
+  display: flex; align-items: center; justify-content: center; max-width: 220px; min-height: 40px; padding: 6px 12px;
+  background: #fff; color: var(--text); border: 2px solid var(--border); border-radius: 22px;
+  box-shadow: 0 6px 18px rgba(31, 41, 80, .18); font-size: 14px; font-weight: 700;
+  animation: rx-pop .38s cubic-bezier(.34, 1.56, .64, 1) both, rx-out .35s ease-in 2.65s forwards;
+}
+.rx-bubble::after {
+  content: ''; position: absolute; left: 50%; bottom: -8px; width: 12px; height: 12px; background: #fff;
+  border-right: 2px solid var(--border); border-bottom: 2px solid var(--border); transform: translateX(-50%) rotate(45deg); border-bottom-right-radius: 4px;
+}
+.rx-bubble-text { word-break: break-word; }
+@keyframes rx-pop { from { opacity: 0; transform: translate(-50%, calc(-100% + 6px)) scale(.4); } to { opacity: 1; transform: translate(-50%, calc(-100% - 8px)) scale(1); } }
+@keyframes rx-out { to { opacity: 0; } }
+@media (prefers-reduced-motion: reduce) {
+  .rx-bubble { animation: rx-out .35s ease-in 2.65s forwards; }
+  .rx-stamp-btn { transition: none; }
+}
+
+@media (max-width: 600px) {
+  .bell-panel { top: 56px; right: 16px; left: 16px; width: auto; }
+  .rx-stamp-btn { flex: 1 1 calc(33% - 6px); }
+  /* スマホの月表示は予定が小さい（アイコンだけ）ので、数は角に出して中身を隠さない */
+  .fc-daygrid-event .rx-badge { top: -7px; right: 2px; bottom: auto; transform: none; height: 15px; padding: 0 5px 0 3px; }
+}
+
+@media print {
+  .rx-badge, .bell-btn, .bell-panel, .rx-bubble, .rx-section { display: none !important; }
+}

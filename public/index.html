@@ -24,6 +24,7 @@
     <div id="people" class="people"></div>
     <div class="top-actions">
       <button id="loginBtn" class="top-btn primary" type="button" hidden>ログイン</button>
+      <button id="bellBtn" class="top-btn ghost bell-btn" type="button" hidden aria-haspopup="dialog" aria-expanded="false" aria-controls="bellPanel" title="通知" aria-label="通知"><svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 9a6 6 0 0 1 12 0c0 6 2.5 7.5 2.5 7.5h-17S6 15 6 9z"/><path d="M10 20a2 2 0 0 0 4 0"/></svg><span id="bellBadge" class="bell-badge" hidden></span></button>
       <button id="lockBtn" class="top-btn ghost lock-btn" type="button" aria-pressed="false" title="ロック中（押すと編集できます）" aria-label="ロック中（押すと編集できます）"><svg class="ico ico-locked" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/></svg><svg class="ico ico-unlocked" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V8a4 4 0 0 1 7.5-2"/></svg></button>
       <button id="menuBtn" class="top-btn ghost menu-btn" type="button" aria-haspopup="true" aria-expanded="false" title="メニュー" aria-label="メニュー"><svg class="ico" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><circle cx="5" cy="12" r="1.8"/><circle cx="12" cy="12" r="1.8"/><circle cx="19" cy="12" r="1.8"/></svg></button>
       <div id="actionMenu" class="action-menu">
@@ -36,6 +37,16 @@
       </div>
     </div>
   </header>
+
+  <!-- 反応の履歴 -->
+  <div id="bellPanel" class="bell-panel" role="dialog" aria-label="反応の履歴" tabindex="-1" hidden>
+    <div class="bell-head">
+      <strong>反応</strong>
+      <label class="bell-sound"><input type="checkbox" id="soundToggle" checked> 音</label>
+      <button type="button" id="bellClose" class="bell-close" aria-label="閉じる">×</button>
+    </div>
+    <ul id="bellList" class="bell-list"></ul>
+  </div>
 
   <main>
     <div id="calendar"></div>
@@ -90,6 +101,7 @@
         <dt>日時</dt><dd id="viewWhen"></dd>
         <div id="viewNoteRow"><dt id="viewNoteLabel">メモ</dt><dd id="viewNote"></dd></div>
       </dl>
+      <section id="viewReactions" class="rx-section" aria-label="反応"></section>
       <p class="hint" id="viewHint"></p>
       <div class="actions">
         <span class="spacer"></span>
@@ -124,6 +136,7 @@
         <label>終了<input type="time" name="endTime" required step="60"></label>
       </div>
       <label>メモ<input type="text" name="note" maxlength="100" placeholder="任意"></label>
+      <section id="stayReactions" class="rx-section" aria-label="反応" hidden></section>
       <p class="error" id="stayError"></p>
       <div class="actions">
         <button type="button" id="stayDelete" class="btn danger">削除</button>
@@ -180,6 +193,7 @@
           <p class="hint" id="memoRepeatInfo"></p>
         </div>
       </div>
+      <section id="memoReactions" class="rx-section" aria-label="反応" hidden></section>
       <p class="error" id="memoError"></p>
       <div class="actions">
         <button type="button" id="memoDelete" class="btn danger">削除</button>
@@ -286,6 +300,7 @@
   </dialog>
 
   <script src="/holidays.js"></script>
+  <script src="/reactions.js"></script>
   <script src="/app.js"></script>
 </body>
 </html>

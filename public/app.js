@@ -39,6 +39,7 @@ async function loadMe() {
   $('#logoutBtn').hidden = !me;
   $('#logoutBtn').title = me ? `ログアウト（${me.email}）` : 'ログアウト';
   if (!me && !locked) setLocked(true); // ログアウトされていたらロックに戻す
+  Reactions.onMe(me); // ベルと通知の取得は、ログイン中だけ
 }
 
 $('#loginBtn').addEventListener('click', () => { location.href = '/account'; });
@@ -199,6 +200,25 @@ function viewWhen(start, end, allDay) {
     : `${fmtViewDay(start)} ${start.slice(11, 16)} 〜 ${fmtViewDay(end)} ${end.slice(11, 16)}`;
 }
 
+// ---------- 反応欄 ----------
+let reactionPane = null; // 開いているダイアログの反応欄（閉じるときに片づける）
+function mountReactions(sectionSel, dialogSel, type, item) {
+  const section = $(sectionSel);
+  if (reactionPane) { reactionPane.destroy(); reactionPane = null; }
+  if (!item) { section.hidden = true; return; }
+  section.hidden = false;
+  const dlg = $(dialogSel);
+  const pane = Reactions.mountPane(section, {
+    type, id: item.id, ownerPersonId: item.person_id ?? null,
+    onChange: (info) => {
+      if (info && info.gone) { dlg.close(); calendar.refetchEvents(); return; }
+      Reactions.refreshSummary();
+    },
+  });
+  reactionPane = pane;
+  dlg.addEventListener('close', () => { if (reactionPane === pane) { pane.destroy(); reactionPane = null; } }, { once: true });
+}
+
 function openViewDialog(kind, item, canEdit = false) {
   const isMemo = kind === 'memo';
   const person = item.person_id == null ? null : personById(item.person_id);
@@ -212,6 +232,7 @@ function openViewDialog(kind, item, canEdit = false) {
   $('#viewNote').textContent = note;
   $('#viewHint').textContent = !me ? 'ログインすると、自分の予定を編集できます'
     : canEdit ? '編集するにはロックを解除してください' : '他の人の予定は変更できません';
+  mountReactions('#viewReactions', '#viewDialog', isMemo ? 'memo' : 'stay', item);
   $('#viewDialog').showModal();
 }
 
@@ -686,8 +707,8 @@ function initCalendar() {
       label.textContent = name;
       top.prepend(label);
     },
-    eventDidMount: (arg) => { arg.el.dataset.eid = arg.event.id; },
-    eventsSet: () => requestAnimationFrame(applyKbCursor),
+    eventDidMount: (arg) => { arg.el.dataset.eid = arg.event.id; Reactions.decorateEl(arg.el); },
+    eventsSet: () => { requestAnimationFrame(applyKbCursor); Reactions.refreshSummary(); },
     datesSet: (info) => {
       requestAnimationFrame(applyKbCursor);
       if (!calendar) return;
@@ -937,6 +958,7 @@ function openStayDialog(stay, start, end, dates = []) {
   $('#stayDelete').hidden = !stay;
   $('#stayError').textContent = '';
   renderPicker();
+  mountReactions('#stayReactions', '#stayDialog', 'stay', stay);
   $('#stayDialog').showModal();
   if (kb.on) f.startTime.focus(); // キーボードモードでは時刻から打ち始められる
 }
@@ -1107,6 +1129,7 @@ function openMemoDialog(memo, opts = {}) {
   }
   renderMemoPicker();
   updateMemoFields();
+  mountReactions('#memoReactions', '#memoDialog', 'memo', memo);
   $('#memoDialog').showModal();
   if (kb.on) f.title.focus();
 }
@@ -1710,6 +1733,15 @@ document.addEventListener('visibilitychange', async () => {
     await loadPeople();
     calendar.refetchEvents();
   }
+});
+
+Reactions.init({
+  api,
+  getMe: () => me,
+  // 今の表示期間（予定の保存形式と同じ、時差なしのローカル時刻）
+  getRange: () => (calendar && calendar.view
+    ? { from: toLocalIso(calendar.view.activeStart), to: toLocalIso(calendar.view.activeEnd) } : null),
+  gotoDate: (date) => calendar.gotoDate(date),
 });
 
 (async () => {
