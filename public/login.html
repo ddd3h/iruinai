@@ -31,6 +31,7 @@
       display: block; width: 100%; margin-top: 6px; padding: 10px 12px; font-size: 16px;
       border: 1px solid #e3e5e8; border-radius: 8px;
     }
+    input[type=hidden] { display: none; }
     input:focus { outline: 2px solid #4f7cff; outline-offset: -1px; border-color: #4f7cff; }
     button {
       width: 100%; margin-top: 16px; padding: 10px; font-size: 16px; font-weight: 600;
@@ -42,6 +43,8 @@
 <body>
   <form method="post" action="/login">
     <h1>在室カレンダー</h1>
+    <!-- 合言葉のあとに戻る場所。サーバーが安全な値だけを escape して入れる -->
+    <input type="hidden" name="next" value="__NEXT__">
     <label>合言葉<input type="password" name="password" required autofocus autocomplete="current-password"></label>
     <p class="error" id="error"></p>
     <button type="submit">入る</button>

@@ -59,12 +59,43 @@ const LOCK_MS = 60 * 1000;
 // OGP の画像は URL が絶対でないと読まれないため、HTML の __ORIGIN__ をアクセス先の URL に置き換えて返す
 // リバースプロキシの後ろで URL が違って見えるときは PUBLIC_URL（例: https://room.example.com）を設定する
 const PUBLIC_URL = (process.env.PUBLIC_URL || '').replace(/\/+$/, '');
-function sendPage(file) {
+// vars(req) があれば、そこで返した { 'プレースホルダー': '値' } も置き換える（値は呼び出し側で HTML に escape しておく）。
+// 置き換えは関数で行う。文字列だと、値の中の `$&` などが特別な意味に解釈されてしまうため
+function sendPage(file, vars) {
   const html = fs.readFileSync(path.join(__dirname, 'public', file), 'utf8');
-  return (req, res) => res.type('html').send(html.replaceAll('__ORIGIN__', PUBLIC_URL || `${req.protocol}://${req.get('host')}`));
+  return (req, res) => {
+    let out = html.replaceAll('__ORIGIN__', () => PUBLIC_URL || `${req.protocol}://${req.get('host')}`);
+    if (vars) for (const [key, value] of Object.entries(vars(req))) out = out.replaceAll(key, () => value);
+    res.type('html').send(out);
+  };
+}
+const escapeHtml = (s) => s.replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
+
+// 合言葉のあとに戻る場所（next）として使ってよいのは、このサイトの中の道だけ。
+// 外部サイト（//host, \host, scheme:）・ヘッダー注入（制御文字、%0d%0a など）・長すぎる値・合言葉の画面自身（ループ）は使わない
+const NEXT_MAX = 2000;
+function safeNext(v) {
+  if (typeof v !== 'string' || v.length > NEXT_MAX) return null;
+  if (v[0] !== '/' || v[1] === '/' || v[1] === '\\') return null;
+  if (v.includes('\\') || v.includes('://')) return null;
+  if (/[\u0000-\u001f\u007f]|%[01][0-9a-f]|%7f/i.test(v)) return null;
+  const route = v.split(/[?#]/)[0].toLowerCase().replace(/\/+$/, '');
+  if (route === '/login' || route === '/logout') return null;
+  return v;
+}
+const loginWithNext = (flag, next) => `/login${flag ? `?e=${flag}` : ''}${next ? `${flag ? '&' : '?'}next=${encodeURIComponent(next)}` : ''}`;
+
+// 合言葉の前に開いた画面（ページ）は、合言葉のあとにそこへ戻れるよう next に控える（メールのリセットリンクのトークンを失わないため）。
+// API や画像・スクリプトなどには付けない
+const NEXT_PAGES = new Set(['/', '/index.html', '/account', '/reset']);
+function loginUrlFor(req) {
+  if (req.method !== 'GET' && req.method !== 'HEAD') return '/login';
+  if (!NEXT_PAGES.has(req.path.toLowerCase().replace(/\/+$/, '') || '/')) return '/login';
+  const next = safeNext(req.originalUrl);
+  return loginWithNext('', next && next !== '/' ? next : null);
 }
 const pageIndex = sendPage('index.html');
-const pageLogin = sendPage('login.html');
+const pageLogin = sendPage('login.html', (req) => ({ __NEXT__: escapeHtml(safeNext(req.query.next) || '') }));
 const pageAccount = sendPage('account.html');
 
 // SNS のプレビュー用クローラーはログインできないので、OGP 画像だけは合言葉なしで配る
@@ -74,16 +105,17 @@ if (PASSWORD) {
   app.get('/login', (req, res) => pageLogin(req, res));
 
   app.post('/login', express.urlencoded({ extended: false }), (req, res) => {
+    const next = safeNext(req.body.next); // 合言葉が合ったあとに戻る場所。安全でなければ `/`
     const f = failures.get(req.ip);
-    if (f && f.count >= LOCK_COUNT && Date.now() - f.at < LOCK_MS) return res.redirect(303, '/login?e=wait');
+    if (f && f.count >= LOCK_COUNT && Date.now() - f.at < LOCK_MS) return res.redirect(303, loginWithNext('wait', next));
     if (!sameText(String(req.body.password || ''), PASSWORD)) {
       const count = f && Date.now() - f.at < LOCK_MS ? f.count + 1 : 1;
       failures.set(req.ip, { count, at: Date.now() });
-      return res.redirect(303, '/login?e=wrong');
+      return res.redirect(303, loginWithNext('wrong', next));
     }
     failures.delete(req.ip);
     res.setHeader('Set-Cookie', `${COOKIE}=${TOKEN}; Max-Age=${COOKIE_MAX_AGE}; Path=/; HttpOnly; SameSite=Lax${req.secure ? '; Secure' : ''}`);
-    res.redirect(303, '/');
+    res.redirect(303, next || '/');
   });
 
   app.get('/logout', (req, res) => {
@@ -95,7 +127,7 @@ if (PASSWORD) {
   app.use((req, res, next) => {
     if (sameText(readCookie(req, COOKIE), TOKEN)) return next();
     if (req.path.startsWith('/api/')) return res.status(401).json({ error: 'ログインしてください' });
-    res.redirect(303, '/login');
+    res.redirect(303, loginUrlFor(req));
   });
 }
 

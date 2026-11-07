@@ -119,12 +119,15 @@ class Client {
     this.user = null;
   }
 
-  async request(method, url, body, { form = false } = {}) {
+  // headers: 追加のリクエストヘッダー。raw: true なら body（文字列または Buffer）をそのまま送る（壊れた本文の確認用。content-type は headers で指定）
+  async request(method, url, body, { form = false, headers: extra = {}, raw = false } = {}) {
     const headers = {};
     if (this.jar.size) headers.cookie = [...this.jar].map(([k, v]) => `${k}=${v}`).join('; ');
     let payload;
     if (body !== undefined) {
-      if (body instanceof FormData) {
+      if (raw) {
+        payload = body;
+      } else if (body instanceof FormData) {
         payload = body; // multipart。content-type（boundary つき）は fetch が付ける
       } else if (form) {
         headers['content-type'] = 'application/x-www-form-urlencoded';
@@ -134,6 +137,7 @@ class Client {
         payload = JSON.stringify(body);
       }
     }
+    Object.assign(headers, extra);
     const res = await fetch(this.base + url, { method, headers, body: payload, redirect: 'manual' });
     for (const line of res.headers.getSetCookie()) {
       const [pair, ...attrs] = line.split(';');

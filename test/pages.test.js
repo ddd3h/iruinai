@@ -21,7 +21,7 @@ test('合言葉を通っていなければ /account は合言葉の画面へ', a
   t.after(() => srv.stop());
   const r = await new Client(srv.base).get('/account');
   assert.equal(r.status, 303);
-  assert.equal(r.headers.get('location'), '/login');
+  assert.equal(r.headers.get('location'), '/login?next=%2Faccount'); // 合言葉のあとに戻れるよう、元の場所を控える
 });
 
 test('合言葉を通ったあとは /account も /reset も開ける', async (t) => {
@@ -34,11 +34,11 @@ test('合言葉を通ったあとは /account も /reset も開ける', async (t
     assert.equal(r.status, 200, url);
     assert.match(r.text, /<script src="\/account\.js">/);
   }
-  // Cookie を持たない人は、どちらも合言葉の画面へ
+  // Cookie を持たない人は、どちらも合言葉の画面へ（合言葉のあとに戻れるよう、元の場所を next に控える）
   for (const url of ['/account', '/reset?token=abc']) {
     const r = await new Client(srv.base).get(url);
     assert.equal(r.status, 303, url);
-    assert.equal(r.headers.get('location'), '/login', url);
+    assert.equal(r.headers.get('location'), `/login?next=${encodeURIComponent(url)}`, url);
   }
 });
 
