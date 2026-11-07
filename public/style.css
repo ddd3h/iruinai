@@ -727,7 +727,8 @@ body.account-page { min-height: 100vh; display: flex; align-items: center; justi
 .bell-row:hover { background: var(--bg); }
 .bell-row:focus-visible { outline: none; box-shadow: 0 0 0 3px rgba(79, 124, 255, .35); }
 .bell-row.unread { background: var(--soft); }
-.bell-row .rx-dot { margin-top: 6px; }
+.bell-row .avatar { width: 36px; height: 36px; font-size: 15px; }
+.rx-item .avatar { width: 24px; height: 24px; font-size: 11px; }
 .bell-main { display: flex; flex-direction: column; gap: 2px; min-width: 0; flex: 1; }
 .bell-head-line { display: flex; align-items: center; gap: 6px; font-size: 14px; }
 .bell-when { margin-left: auto; font-size: 11px; color: var(--muted); white-space: nowrap; }

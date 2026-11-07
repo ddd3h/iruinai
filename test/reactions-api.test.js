@@ -97,7 +97,7 @@ test('一覧: 古い順で、mine と deletable が呼んだ人ごとに正し�
   const asA = (await a.get(`/api/reactions/stay/${stay.id}`)).json;
   assert.deepEqual(asA.map((x) => x.id), [rb.id, rc.id]);
   assert.deepEqual(asA.map((x) => x.mine), [false, false]);
-  assert.deepEqual(asA.map((x) => x.deletable), [true, true]); // 持ち主は両方消せる
+  assert.deepEqual(asA.map((x) => x.deletable), [false, false]); // 消せるのは、した本人だけ。持ち主も消せない
   assert.equal(asA[0].user.name, 'B');
   assert.match(asA[0].user.color, /^#[0-9a-f]{6}$/i);
   const asB = (await b.get(`/api/reactions/stay/${stay.id}`)).json;
@@ -112,20 +112,24 @@ test('一覧: 古い順で、mine と deletable が呼んだ人ごとに正し�
   assert.equal((await a.get('/api/reactions/stay/abc')).status, 400);
 });
 
-test('削除: 書いた本人と持ち主はできる。第三者はできない', async (t) => {
+test('削除: した本人だけができる。持ち主も第三者もできない', async (t) => {
   const { b, c, a, stay } = await setup(t);
   const r1 = (await react(b, 'stay', stay.id, { stamp: 'like' })).json;
   const r2 = (await react(b, 'stay', stay.id, { body: 'x' })).json;
   const r3 = (await react(b, 'stay', stay.id, { stamp: 'sad' })).json;
-  assert.equal((await c.del(`/api/reactions/${r1.id}`)).status, 403);
+  assert.equal((await c.del(`/api/reactions/${r1.id}`)).status, 403); // 第三者
+  const byOwner = await a.del(`/api/reactions/${r2.id}`); // 予定の持ち主でも消せない
+  assert.equal(byOwner.status, 403);
+  assert.equal(byOwner.json.error, '他の人の反応は消せません');
+  assert.equal((await a.get(`/api/reactions/stay/${stay.id}`)).json.length, 3); // 何も消えていない
   assert.equal((await b.del(`/api/reactions/${r1.id}`)).status, 204); // 本人
-  assert.equal((await a.del(`/api/reactions/${r2.id}`)).status, 204); // 持ち主
-  assert.equal((await a.del(`/api/reactions/${r2.id}`)).status, 404); // もうない
+  assert.equal((await b.del(`/api/reactions/${r2.id}`)).status, 204); // 本人（コメント）
+  assert.equal((await b.del(`/api/reactions/${r2.id}`)).status, 404); // もうない
   assert.equal((await a.del('/api/reactions/abc')).status, 400);
   assert.equal((await a.del('/api/reactions/99999')).status, 404);
   // 取り消したスタンプは、付け直せる
   assert.equal((await react(b, 'stay', stay.id, { stamp: 'like' })).status, 201);
-  assert.equal((await a.get(`/api/reactions/stay/${stay.id}`)).json.length, 2);
+  assert.equal((await a.get(`/api/reactions/stay/${stay.id}`)).json.length, 2); // r3 と付け直した like
   assert.ok(r3.id);
 });
 

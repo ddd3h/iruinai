@@ -43,6 +43,15 @@
     for (const k of Object.keys(attrs)) el.setAttribute(k, attrs[k]);
     return el;
   }
+  // 人のアイコン（丸）。画像があれば画像、なければ人の色と頭文字（app.js の avatar() と同じ見た目）
+  function personAvatar(p) {
+    const el = document.createElement('span');
+    el.className = 'avatar';
+    el.style.backgroundColor = p.color;
+    if (p.icon_path) el.style.backgroundImage = `url("${String(p.icon_path).replace(/["\\\n\r]/g, '')}")`;
+    else el.textContent = String(p.name || '?').slice(0, 1);
+    return el;
+  }
   function faceSvg(id) {
     const f = FACES[id];
     const svg = svgEl('svg', { viewBox: '0 0 32 32', 'aria-hidden': 'true', focusable: 'false' });
@@ -76,6 +85,7 @@
     let muted = false;
     return {
       setMuted(v) { muted = !!v; },
+      isMuted() { return muted; },
       unlock() {
         if (!Ctor) return;
         try {
@@ -235,9 +245,7 @@
       for (const r of items) {
         const li = document.createElement('li');
         li.className = 'rx-item';
-        const dot = document.createElement('span');
-        dot.className = 'rx-dot';
-        dot.style.backgroundColor = r.user.color;
+        const dot = personAvatar(r.user);
         const who = document.createElement('span');
         who.className = 'rx-who';
         who.textContent = r.user.name;
@@ -361,9 +369,7 @@
       const b = document.createElement('button');
       b.type = 'button';
       b.className = 'bell-row' + (it.unread ? ' unread' : '');
-      const dot = document.createElement('span');
-      dot.className = 'rx-dot';
-      dot.style.backgroundColor = it.from.color;
+      const dot = personAvatar(it.from); // 送った人のアイコン（丸）を左に
       const main = document.createElement('span');
       main.className = 'bell-main';
       const head = document.createElement('span');
@@ -428,23 +434,34 @@
     return document.querySelector(`#calendar [data-eid="${type === 'stay' ? 's' : 'm'}${id}"]`);
   }
 
-  // 新着の反応を、予定の上に吹き出しで出す。予定が画面に見えていないときは何も出さない（ベルの数だけ増える）
-  function showBubble(it, delay) {
-    const el = findEventEl(it.target.type, it.target.id);
-    if (!el) return;
-    const r = el.getBoundingClientRect();
-    if (r.bottom < 0 || r.top > window.innerHeight || r.right < 0 || r.left > window.innerWidth || (r.width === 0 && r.height === 0)) return;
-    setTimeout(() => {
-      const b = document.createElement('div');
-      b.className = 'rx-bubble';
-      b.setAttribute('role', 'status');
-      b.append(it.kind === 'stamp' ? stampEl(it.stamp, 30) : Object.assign(document.createElement('span'), { className: 'rx-bubble-text', textContent: it.body }));
-      const rect = el.getBoundingClientRect();
-      b.style.left = `${Math.min(Math.max(rect.left + rect.width / 2, 60), window.innerWidth - 60)}px`;
-      b.style.top = `${Math.max(rect.top, 8)}px`;
-      document.body.append(b);
-      setTimeout(() => b.remove(), BUBBLE_MS);
-    }, delay);
+  // 新着の反応を、予定の上に吹き出しで出す。予定が画面に見えていないときは何も出さない（ベルの数だけ増える）。
+  // wait: 開いた直後は予定がまだ描かれていないことがあるので、描かれるまで少し待つ
+  function showBubble(it, delay, wait = false) {
+    const attempt = (n) => {
+      const el = findEventEl(it.target.type, it.target.id);
+      if (!el) { if (wait && n < 20) setTimeout(() => attempt(n + 1), 300); return; }
+      const r = el.getBoundingClientRect();
+      if (r.bottom < 0 || r.top > window.innerHeight || r.right < 0 || r.left > window.innerWidth || (r.width === 0 && r.height === 0)) return;
+      setTimeout(() => {
+        const b = document.createElement('div');
+        b.className = 'rx-bubble';
+        b.setAttribute('role', 'status');
+        b.append(it.kind === 'stamp' ? stampEl(it.stamp, 30) : Object.assign(document.createElement('span'), { className: 'rx-bubble-text', textContent: it.body }));
+        const rect = el.getBoundingClientRect();
+        b.style.left = `${Math.min(Math.max(rect.left + rect.width / 2, 60), window.innerWidth - 60)}px`;
+        b.style.top = `${Math.max(rect.top, 8)}px`;
+        document.body.append(b);
+        setTimeout(() => b.remove(), BUBBLE_MS);
+      }, delay);
+    };
+    attempt(0);
+  }
+
+  // 吹き出しと音で知らせる。音は 1 回だけ。ブラウザが操作前の再生を止めているときは、最初の操作のあとに鳴らす
+  let pendingPop = false;
+  function announce(list, opening) {
+    list.forEach((it, i) => showBubble(it, i * (opening ? 800 : 450), opening));
+    if (!sound.pop() && !sound.isMuted()) pendingPop = true;
   }
 
   async function poll() {
@@ -458,12 +475,20 @@
     items = data.items.map((it, idx) => ({ ...it, unread: panelOpen ? (flags.has(it.id) ? flags.get(it.id) : true) : idx < data.unread }));
     setBadge(panelOpen ? 0 : data.unread);
     if (panelOpen) { renderList(); if (data.unread > 0) markSeen(); }
-    if (prevMax === null) { lastShownId = maxId; return; } // 最初の取得は、過去の反応を一斉に出さないよう、基準を決めるだけ
+    if (prevMax === null) {
+      // 開いた直後: まだ見ていない（未読の）反応を、この端末でまだ見せていないものだけ、吹き出しと音で出す
+      lastShownId = maxId;
+      const stored = readShown();
+      writeShown(maxId);
+      const unseen = data.items.slice(0, data.unread).filter((i) => i.id > stored).reverse();
+      if (unseen.length) announce(unseen.slice(-5), true);
+      return;
+    }
     const fresh = data.items.filter((i) => i.id > prevMax).reverse();
     if (!fresh.length) return;
     lastShownId = Math.max(prevMax, maxId);
-    fresh.slice(-3).forEach((it, i) => showBubble(it, i * 450));
-    sound.pop(); // 1 回の取得につき 1 回だけ
+    writeShown(lastShownId);
+    announce(fresh.slice(-3), false); // 1 回の取得につき、音は 1 回だけ
     refreshSummary();
   }
 
@@ -503,6 +528,15 @@
     try { localStorage.setItem(SOUND_KEY, on ? 'on' : 'off'); } catch { /* 保存できなくても動く */ }
   }
 
+  // 画面を開いたときに見せた反応の最大 id（ユーザーごと）。同じ端末で開き直しても、同じ反応をもう一度は出さない
+  const shownKey = () => `iruinai.shown.${(ctxApi.getMe() || {}).id}`;
+  function readShown() {
+    try { return Number(localStorage.getItem(shownKey())) || 0; } catch { return 0; }
+  }
+  function writeShown(id) {
+    try { localStorage.setItem(shownKey(), String(id)); } catch { /* 保存できなくても動く */ }
+  }
+
   function wire() {
     const btn = $('#bellBtn');
     const panel = $('#bellPanel');
@@ -519,13 +553,16 @@
       if (panelOpen && !panel.contains(e.target) && !btn.contains(e.target)) closePanel(false);
     });
     // 音は、最初の操作のあとから鳴らせる（ブラウザの自動再生の制限）
-    const unlock = () => sound.unlock();
-    document.addEventListener('pointerdown', unlock, { once: true });
-    document.addEventListener('keydown', unlock, { once: true });
+    const unlock = () => {
+      sound.unlock();
+      if (pendingPop) setTimeout(() => { if (sound.pop() || sound.isMuted()) pendingPop = false; }, 80); // resume() の完了を少し待つ
+    };
+    document.addEventListener('pointerdown', unlock);
+    document.addEventListener('keydown', unlock);
   }
 
   const api = {
-    STAMPS, init, stampEl, mountPane, refreshSummary, decorateEl, onMe, startNotifications, stopNotifications, makeSound,
+    personAvatar, STAMPS, init, stampEl, mountPane, refreshSummary, decorateEl, onMe, startNotifications, stopNotifications, makeSound,
   };
   if (typeof document !== 'undefined' && document.getElementById) {
     if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', wire);

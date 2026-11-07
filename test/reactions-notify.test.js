@@ -56,12 +56,13 @@ test('通知: 自分の予定・メモへの他の人の反応だけが、新し
   const [memoItem, stayItem] = n.items;
   assert.deepEqual(memoItem, {
     id: memoItem.id, kind: 'comment', stamp: null, body: 'ありがと', created_at: memoItem.created_at,
-    from: { name: 'C', color: memoItem.from.color }, target: { type: 'memo', id: memoId, date: '2026-11-20', label: 'Aのメモ' },
+    from: { name: 'C', color: memoItem.from.color, icon_path: null }, target: { type: 'memo', id: memoId, date: '2026-11-20', label: 'Aのメモ' },
   });
   assert.equal(stayItem.kind, 'stamp');
   assert.equal(stayItem.stamp, 'like');
   assert.equal(stayItem.from.name, 'B');
   assert.equal(stayItem.from.color, '#e5484d');
+  assert.equal(stayItem.from.icon_path, null); // アイコンを登録していない人
   assert.deepEqual(stayItem.target, { type: 'stay', id: stay.id, date: '2026-11-10', label: 'Aの在室' });
   // 他の人には、A 宛てのものは出ない
   assert.deepEqual((await b.get('/api/notifications')).json, { unread: 0, items: [] });
@@ -131,6 +132,8 @@ test('通知: 反応が消えると、通知からも消える', async (t) => {
   const { a, b, stay } = await setup(t);
   const r = (await react(b, 'stay', stay.id, { stamp: 'like' })).json;
   assert.equal((await a.get('/api/notifications')).json.items.length, 1);
-  await a.del(`/api/reactions/${r.id}`);
+  assert.equal((await a.del(`/api/reactions/${r.id}`)).status, 403); // 持ち主は消せないので、通知も残る
+  assert.equal((await a.get('/api/notifications')).json.items.length, 1);
+  assert.equal((await b.del(`/api/reactions/${r.id}`)).status, 204); // した本人が消すと、通知からも消える
   assert.deepEqual((await a.get('/api/notifications')).json, { unread: 0, items: [] });
 });
