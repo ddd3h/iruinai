@@ -102,7 +102,7 @@
     location.href = '/';
   });
 
-  // 新規登録：未紐付けの人を選べるようにする
+  // 人の選択（コード確認のあと）：未紐付けの人を選べるようにする
   async function loadExisting() {
     let free = [];
     try {
@@ -119,28 +119,35 @@
   }
 
   function syncPersonMode() {
-    const f = $('#view-signup');
+    const f = $('#view-person');
     const existing = f.mode.value === 'existing';
     f.new_name.disabled = existing;
     f.new_name.required = !existing;
     f.new_color.disabled = existing;
     $('#existingSelect').disabled = !existing;
   }
-  $('#view-signup').addEventListener('change', (e) => { if (e.target.name === 'mode') syncPersonMode(); });
+  $('#view-person').addEventListener('change', (e) => { if (e.target.name === 'mode') syncPersonMode(); });
+
+  // コードが合ったあとの、人を選ぶ画面。選び終わるまでは、サーバーにユーザーも人も作られない
+  async function showPerson() {
+    const f = $('#view-person');
+    f.mode.value = 'new';
+    show('person');
+    syncPersonMode();
+    await loadExisting();
+    syncPersonMode();
+  }
 
   onSubmit('signup', async (f) => {
     if (f.password.value !== f.password2.value) throw new Error('パスワードが一致しません');
-    const body = { email: f.email.value, password: f.password.value };
-    if (f.mode.value === 'existing') body.person_id = Number(f.person_id.value);
-    else { body.new_name = f.new_name.value; body.new_color = f.new_color.value; }
-    const data = await post('/api/auth/signup', body);
+    const data = await post('/api/auth/signup', { email: f.email.value, password: f.password.value });
     // 申し込み直し（resumed）のときは、再送までの本当の残り時間と、ロックの有無をサーバーに聞く
     const p = data.resumed ? await fetchPending() : null;
     if (p) showPending(p, { resumed: true });
     else showCode({ email: f.email.value.trim().toLowerCase(), fresh: !data.resumed, resumed: !!data.resumed });
   });
 
-  // コード確認。本文はコードだけ
+  // コード確認。本文はコードだけ。合っても登録は済まず、人を選ぶ画面へ進む
   onSubmit('code', async (f) => {
     try {
       await post('/api/auth/verify', { code: f.code.value });
@@ -148,7 +155,27 @@
       if (err.noPending) return backToSignup(err.message);
       throw err;
     }
+    await showPerson();
+  });
+
+  // 人を選んで、登録を完了する
+  onSubmit('person', async (f) => {
+    const body = f.mode.value === 'existing'
+      ? { person_id: Number(f.person_id.value) }
+      : { new_name: f.new_name.value, new_color: f.new_color.value };
+    try {
+      await post('/api/auth/complete', body);
+    } catch (err) {
+      if (err.noPending) return backToSignup(err.message);
+      // 時間切れで確認待ちが消えていたら、選び直しではなく、登録の最初に戻す
+      if (!(await fetchPending())) return backToSignup(err.message);
+      throw err;
+    }
     location.href = '/';
+  });
+  $('#cancelBtn').addEventListener('click', async () => {
+    try { await post('/api/auth/cancel', {}); } catch { /* 消せなくても、画面は戻す。残った行は期限で消える */ }
+    show('login');
   });
   $('#resendBtn').addEventListener('click', async () => {
     try {
@@ -180,16 +207,15 @@
       const me = await fetch('/api/me').then((r) => (r.ok ? r.json() : null)).catch(() => null);
       if (me?.user) { location.href = '/'; return; }
     }
-    syncPersonMode();
-    // 先に画面を出す。/api/people が壊れていても、ログインや再設定は使える。
-    // メールのリセットリンク（/reset?token=…）が先。そうでなければ、確認待ちがあればコード入力の画面、なければログイン
+    // /api/people が壊れていても、ログインや再設定は使える（人の一覧は、人を選ぶ画面を出すときだけ読む）。
+    // メールのリセットリンク（/reset?token=…）が先。そうでなければ、確認待ちがあれば（コード確認済みなら人の選択、まだならコード入力）、なければログイン
     if (isReset && token) {
       show('reset');
     } else {
       const pending = await fetchPending();
-      if (pending) showPending(pending);
+      if (pending?.verified) await showPerson();
+      else if (pending) showPending(pending);
       else show('login');
     }
-    await loadExisting();
   })();
 })();

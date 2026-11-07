@@ -28,7 +28,7 @@ const tokenCount = (srv) => {
   db.close();
   return n;
 };
-const signupBody = (email) => ({ email, password: 'password123', new_name: 'N' });
+const signupBody = (email) => ({ email, password: 'password123' });
 
 test('メールを送る 3つの API は同じ IP の上限を分け合い、超えたら 429 でメールも行も作らない。1時間たつと戻る', async (t) => {
   const srv = await startServer({ MAIL_IP_LIMIT: '3' }, { fakeClock: true });
@@ -86,9 +86,9 @@ test('メールを送らずに終わる要求（入力の誤りなど）は、�
   const c = new Client(srv.base);
 
   const rejected = [
-    ['/api/auth/signup', { email: 'not-an-email', password: 'password123', new_name: 'N' }],
-    ['/api/auth/signup', { email: 'x@example.com', password: 'short', new_name: 'N' }],
-    ['/api/auth/signup', { email: 'x@example.com', password: 'password123' }], // 名前も人もない
+    ['/api/auth/signup', { email: 'not-an-email', password: 'password123' }],
+    ['/api/auth/signup', { email: 'x@example.com', password: 'short' }],
+    ['/api/auth/signup', { email: 'x@example.com' }], // パスワードがない
     ['/api/auth/signup', signupBody('known@example.com')], // 登録済み
     ['/api/auth/resend', {}], // 確認待ちがない（この Client は申し込んだことがないので Cookie がない）
   ];

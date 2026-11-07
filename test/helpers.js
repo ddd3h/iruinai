@@ -207,18 +207,21 @@ class Client {
   putMultipart(url, formData) { return this.request('PUT', url, formData); }
 }
 
-// 登録 → コード確認までを API で行い、ログイン済みの Client を返す
+// 登録 → コード確認 → 人の選択までを API で行い、ログイン済みの Client を返す
 // person: { new_name, new_color? } または { person_id }
 async function registerUser(srv, { email, password = 'password123', person }) {
   const c = new Client(srv.base);
   const before = srv.mailCount(email.trim().toLowerCase());
-  const r = await c.post('/api/auth/signup', { email, password, ...person });
+  const r = await c.post('/api/auth/signup', { email, password });
   assert.equal(r.status, 200, JSON.stringify(r.json));
   const mail = await srv.waitMail(email.trim().toLowerCase(), before + 1);
   const code = mail.text.match(/確認コード: (\d{6})/)[1];
   const v = await c.post('/api/auth/verify', { code }); // 申し込んだブラウザ（Cookie）だけで確認できる。メールもパスワードも送らない
   assert.equal(v.status, 200, JSON.stringify(v.json));
-  c.user = v.json.user;
+  assert.equal(v.json.verified, true); // コードが合っただけでは、まだ登録されない
+  const d = await c.post('/api/auth/complete', person); // 人を選んで、登録が済む
+  assert.equal(d.status, 200, JSON.stringify(d.json));
+  c.user = d.json.user;
   return c;
 }
 

@@ -76,11 +76,22 @@ test('account.js が参照する要素は account.html にある', () => {
   assert.match(codeInput, /autocomplete="one-time-code"/);
   assert.match(codeInput, /maxlength="6"/);
   assert.match(codeInput, /\brequired\b/);
-  // 残るのは、宛先の案内・登録する・再送（カウントダウンつき）・入力し直す（登録の画面へ戻る）
+  // 残るのは、宛先の案内・コードを確認する・再送（カウントダウンつき）・入力し直す（登録の画面へ戻る）
   assert.match(code, /id="codeSent"/);
-  assert.match(code, /<button type="submit"[^>]*>登録する<\/button>/);
+  assert.match(code, /<button type="submit"[^>]*>コードを確認する<\/button>/);
   assert.match(code, /id="resendBtn"/);
   assert.match(code, /data-go="signup"[^>]*>入力し直す</);
+  // 申し込みの画面には「あなたの人」を置かない。人は、コードの確認のあとの画面（view-person）で選ぶ
+  const signup = block('view-signup');
+  assert.doesNotMatch(signup, /あなたの人|name="(?:mode|new_name|new_color|person_id)"/);
+  const person = block('view-person');
+  assert.deepEqual([...new Set([...person.matchAll(/<(?:input|select)\b[^>]*>/g)].map((m) => m[0].match(/\bname="([^"]+)"/)?.[1]))].sort(), ['mode', 'new_color', 'new_name', 'person_id']);
+  assert.match(person, /<button type="submit"[^>]*>登録を完了する<\/button>/);
+  assert.match(person, /id="cancelBtn"[^>]*>やめる</);
+  // 登録の申し込みの本文は、メールとパスワードだけ。人の指定は /complete で送る
+  assert.match(js, /post\('\/api\/auth\/signup', \{ email: f\.email\.value, password: f\.password\.value \}\)/);
+  assert.match(js, /post\('\/api\/auth\/complete'/);
+  assert.match(js, /post\('\/api\/auth\/cancel'/);
   // 「確認コードを入力する」のリンクは、どの画面にもない
   assert.doesNotMatch(html, /data-go="code"/);
   assert.doesNotMatch(html, /確認コードを入力する/);
