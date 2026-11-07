@@ -1,4 +1,4 @@
-// 反応（スタンプ・コメント）の画面。スペック: docs/superpowers/specs/2026-11-07-reactions-design.md
+// 反応（スタンプ・コメント）の画面
 // app.js より先に読み込み、起動時に Reactions.init() で app.js の関数を受け取る。
 // ユーザーの入力は innerHTML に入れない（textContent と createElement だけで組む）。
 (function (root) {
