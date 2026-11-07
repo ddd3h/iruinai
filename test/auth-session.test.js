@@ -46,6 +46,21 @@ test('同じ IP から 5回続けて失敗すると、正しい PW でも 1分�
   assert.equal((await c.post('/api/auth/login', { email: 'a@example.com', password: 'password123' })).status, 429);
 });
 
+test('ログインの失敗が続いたロックは、1分たつと解ける（回数も数え直す）', async (t) => {
+  const srv = await startServer({}, { fakeClock: true });
+  t.after(() => srv.stop());
+  await registerUser(srv, { email: 'a@example.com', password: 'password123', person: { new_name: 'A' } });
+  const c = new Client(srv.base);
+  const wrong = () => c.post('/api/auth/login', { email: 'a@example.com', password: 'wrong-wrong' });
+  for (let i = 0; i < 5; i++) assert.equal((await wrong()).status, 400);
+  assert.equal((await c.post('/api/auth/login', { email: 'a@example.com', password: 'password123' })).status, 429);
+  srv.advanceClock(59 * 1000);
+  assert.equal((await c.post('/api/auth/login', { email: 'a@example.com', password: 'password123' })).status, 429); // ロック中の試行は時間を延ばさない
+  srv.advanceClock(2 * 1000);
+  for (let i = 0; i < 4; i++) assert.equal((await wrong()).status, 400); // 数え直し: 4回まではロックされない
+  assert.equal((await c.post('/api/auth/login', { email: 'a@example.com', password: 'password123' })).status, 200);
+});
+
 test('PW リセット: 1回限り。使うと既存のセッションが全部消え、新しい PW でだけ入れる', async (t) => {
   const srv = await startServer();
   t.after(() => srv.stop());

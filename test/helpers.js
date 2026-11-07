@@ -35,7 +35,9 @@ async function waitFor(fn, what, ms = 5000) {
 // reject する Error には、確認用に pid と dataDir を付ける。
 // startTimeout は起動待ちの上限（ミリ秒）。テストで失敗経路を速く確かめるために変えられる。
 // seed(dataDir) は起動前に呼ばれ、DATA_DIR に古い形式の app.db などを置くのに使える
-async function startServer(extraEnv = {}, { startTimeout = 5000, seed } = {}) {
+// fakeClock: true なら、子プロセスの Date.now() を srv.advanceClock(ms) で進められる（test/fake-clock.js）。
+// 「1分たつと戻る」を待たずに確かめるためのもの。この場合、テスト側から DB に絶対時刻（Date.now()）を書くのは避ける
+async function startServer(extraEnv = {}, { startTimeout = 5000, seed, fakeClock = false } = {}) {
   const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'iruinai-test-'));
   let port;
   let child;
@@ -54,6 +56,7 @@ async function startServer(extraEnv = {}, { startTimeout = 5000, seed } = {}) {
       ENV_FILE: path.join(dataDir, 'none.env'), // 開発用の .env を読ませない
       ...extraEnv,
     };
+    if (fakeClock) env.NODE_OPTIONS = [process.env.NODE_OPTIONS, `--require=${path.join(__dirname, 'fake-clock.js')}`].filter(Boolean).join(' ');
     child = spawn(process.execPath, [path.join(ROOT, 'server.js')], { env, stdio: ['ignore', 'pipe', 'pipe'] });
     let spawnError = null;
     // 'close' は終了後に stdout/stderr を読み切ってから来る。起動に失敗したときは 'error' だけが来る
@@ -84,6 +87,7 @@ async function startServer(extraEnv = {}, { startTimeout = 5000, seed } = {}) {
   const mails = () => [...out.matchAll(/\[mail\] to=(\S+) subject=(.*)\n([\s\S]*?)\n\[\/mail\]/g)]
     .map((m) => ({ to: m[1], subject: m[2], text: m[3] }));
   const mailCount = (to) => mails().filter((m) => m.to === to).length;
+  let clockOffset = 0;
 
   return {
     base: `http://127.0.0.1:${port}`,
@@ -96,6 +100,14 @@ async function startServer(extraEnv = {}, { startTimeout = 5000, seed } = {}) {
       await waitFor(() => mailCount(to) >= minCount, `mail to ${to}`);
       const list = mails().filter((m) => m.to === to);
       return list[list.length - 1];
+    },
+    // fakeClock: true で起動したサーバーの時計を ms 進める。一時ファイルに書いて rename し、読み途中の値を見せない
+    advanceClock(ms) {
+      assert.ok(fakeClock, 'startServer(…, { fakeClock: true }) で起動したときだけ使える');
+      clockOffset += ms;
+      const file = path.join(dataDir, 'clock-offset');
+      fs.writeFileSync(file + '.tmp', String(clockOffset));
+      fs.renameSync(file + '.tmp', file);
     },
     // サーバーも起動直後に書き込む（期限切れの行の掃除）ので、ロックされていたら待つ
     openDb() {
