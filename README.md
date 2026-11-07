@@ -152,7 +152,7 @@ public/style.css     見た目
 | POST | `/api/auth/reset` | 新しいパスワードを設定（`token`, `password`） |
 | POST | `/api/me/withdraw` | 退会（`password`）。人・在室・メモ・アカウントを削除。パスワードを5回続けて間違えると、そのアカウントは1分間（正しいパスワードでも）退会できません（`429`） |
 | GET | `/api/people` | 人の一覧（`claimed` は、アカウントと紐付け済みなら `1`） |
-| PUT | `/api/people/:id` | 人を更新（本人のみ。`removeIcon=1` で画像を外す） |
+| PUT | `/api/people/:id` | 人を更新（本人のみ。`removeIcon=1` で画像を外す）。画像は2MBまで（超えると `400`）。アップロードの内容が壊れているときも `400` |
 | GET | `/api/stays?start=&end=` | 期間内の在室一覧 |
 | POST | `/api/stays` | 在室を1件追加 |
 | POST | `/api/stays/batch` | 同じ時間で複数日に追加（`person_id`, `dates`, `startTime`, `endTime`, `note`） |

@@ -23,6 +23,20 @@ const upload = multer({
   fileFilter: (req, file, cb) => cb(null, file.mimetype in ALLOWED_EXT),
 });
 
+// 画像の受け取り（multer）で起きたエラーを、受け取った内容の誤りとして 400 にそろえる。
+// 壊れた multipart（Unexpected end of form・Malformed part header・Boundary not found など）は、busboy からステータスのない
+// 普通の Error で届くため、そのままだと 500 とスタックのログになってしまう。
+// 2MB 超過（LIMIT_FILE_SIZE）は、今までの文面を返すため末尾のエラー処理に任せる。
+// ディスクの書き込み失敗などサーバー側の問題（syscall の付いたシステムエラー）も、500 のまま末尾に任せる
+const uploadIcon = upload.single('icon');
+function receiveIcon(req, res, next) {
+  uploadIcon(req, res, (err) => {
+    if (!err) return next();
+    if (err.code === 'LIMIT_FILE_SIZE' || err.syscall) return next(err);
+    res.status(400).json({ error: 'アップロードの内容が正しくありません' });
+  });
+}
+
 function removeIcon(iconPath) {
   if (!iconPath) return;
   fs.rm(path.join(UPLOAD_DIR, path.basename(iconPath)), { force: true }, () => {});
@@ -168,7 +182,7 @@ app.get('/api/people', (req, res) => {
 // 人は登録時にだけ作る（POST はない）。変更は本人だけ。退会は POST /api/me/withdraw
 // 画像を受け取る前に所有者を検査する（拒否した画像がディスクに残らないように）
 app.put('/api/people/:id', (req, res, next) => (guard.mine(req, req.params.id) ? next() : guard.deny(res)),
-  upload.single('icon'), (req, res) => {
+  receiveIcon, (req, res) => {
     const body = req.body;
     if (!body || typeof body !== 'object' || Array.isArray(body)) return res.status(400).json({ error: '送信内容が正しくありません' });
     const p = db.prepare('SELECT * FROM people WHERE id = ?').get(req.params.id);
