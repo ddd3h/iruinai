@@ -97,6 +97,7 @@ function loginUrlFor(req) {
 const pageIndex = sendPage('index.html');
 const pageLogin = sendPage('login.html', (req) => ({ __NEXT__: escapeHtml(safeNext(req.query.next) || '') }));
 const pageAccount = sendPage('account.html');
+const pageLogout = sendPage('logout.html');
 
 // SNS のプレビュー用クローラーはログインできないので、OGP 画像だけは合言葉なしで配る
 app.get('/iruinai-ogp.png', (req, res) => res.sendFile(path.join(__dirname, 'public/iruinai-ogp.png')));
@@ -118,10 +119,24 @@ if (PASSWORD) {
     res.redirect(303, next || '/');
   });
 
-  app.get('/logout', (req, res) => {
+  function logout(req, res) {
     destroySession(req, res); // セッションの行と Cookie を消す
     res.append('Set-Cookie', `${COOKIE}=; Max-Age=0; Path=/; HttpOnly; SameSite=Lax`);
     res.redirect(303, '/login');
+  }
+  // GET は、アドレス欄・ブックマーク・同じサイトのリンクから開いたとき（Sec-Fetch-Site が same-origin か none）だけログアウトする。
+  // 他のサイトのリンクや画像で勝手にログアウトさせられないよう、cross-site・same-site・ヘッダーなしは確認の画面を出す
+  app.get('/logout', (req, res) => {
+    const fetchSite = String(req.get('sec-fetch-site') || '').toLowerCase();
+    if (fetchSite === 'same-origin' || fetchSite === 'none') return logout(req, res);
+    pageLogout(req, res);
+  });
+  // 確認の画面のボタンから送られる。他のサイトから送られたと分かるもの（ヘッダーあり・same-origin 以外）は実行せず、確認の画面を返す。
+  // ヘッダーのないクライアント（curl など）は、そのまま実行する
+  app.post('/logout', (req, res) => {
+    const fetchSite = String(req.get('sec-fetch-site') || '').toLowerCase();
+    if (fetchSite && fetchSite !== 'same-origin') return pageLogout(req, res);
+    logout(req, res);
   });
 
   app.use((req, res, next) => {

@@ -109,7 +109,10 @@ SQLite は、外部キーを有効にし（`foreign_keys = ON`）、`busy_timeou
 - Cookie 名は `iruinai_session`。属性は `HttpOnly; SameSite=Lax; Path=/` で、HTTPS のときは `Secure` を付ける。HTTPS かどうかは、`req.secure` が真であるか、`PUBLIC_URL` が `https://` で始まるかで判定する。TLS を終端するプロキシの後ろでは、アプリには HTTP で届き `req.secure` が偽になるため、`PUBLIC_URL` も見る。
 - `GET /api/me` は、ログイン中なら `{ user: { id, email, person_id } }`、そうでなければ `{ user: null }` を返す。
 - `POST /api/auth/logout` は、そのセッションだけを消す。
-- 既存の `GET /logout`（合言葉のログアウト）は、合言葉の Cookie とセッションの Cookie を両方消す。
+- 既存の `GET /logout`（合言葉のログアウト）は、合言葉の Cookie とセッションの行・Cookie を両方消して `/login` へ送る。`ROOM_PASSWORD` を設定したときだけ存在し、合言葉の門より前に置く（合言葉を持たない端末でも、Cookie を消せる）。
+  - 他のサイトのリンクや画像で勝手にログアウトさせられないよう（`SameSite=Lax` の Cookie は、他サイトからのリンクの移動には付くため）、GET は `Sec-Fetch-Site` が `same-origin` か `none`（アドレス欄、ブックマーク、同じサイトのリンク）のときだけ実行する。`cross-site`、`same-site`（兄弟のサブドメインも他サイトと同じに扱う）、ヘッダーなしのときは、「ログアウトしますか？」の確認画面（`public/logout.html`、`style.css` の既存の部品だけを使う。ユーザーの情報は入れない）を `200` で返し、ボタン（`POST /logout`）が押されたときだけ実行する。
+  - `POST /logout` は、同じ処理を行って `/login` へ `303` で送る。ヘッダーのないクライアント（curl など）は、そのまま実行する。`Sec-Fetch-Site` が `same-origin` 以外のブラウザからの POST（他サイトのフォームの自動送信）は実行せず、確認画面を返す。
+  - 画面のヘッダーの「ログアウト」ボタンは、これとは別に `POST /api/auth/logout`（セッションだけを消す）を使う。
 
 ### 退会
 
@@ -184,6 +187,7 @@ CSRF 対策は、Cookie の `SameSite=Lax` に任せる。他サイトからの 
 - `lib/secrets.js`: PW のハッシュ、トークンと 6桁コードの生成
 - `lib/cookies.js`: Cookie の読み取り
 - `public/account.html`, `public/account.js`: 新しい画面
+- `public/logout.html`: `/logout` の確認画面
 
 新しい依存は `nodemailer` だけ。
 

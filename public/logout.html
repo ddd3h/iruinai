@@ -1,0 +1,22 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="robots" content="noindex">
+  <title>ログアウト | 在室カレンダー</title>
+  <link rel="stylesheet" href="/style.css">
+</head>
+<body class="account-page">
+  <main class="account-card">
+    <h1>在室カレンダー</h1>
+    <!-- 他のサイトのリンクから開かれたときの確認画面。ボタンを押したときだけ POST /logout で実際にログアウトする -->
+    <form method="post" action="/logout">
+      <h2>ログアウトしますか？</h2>
+      <p class="hint">合言葉とログインの両方からログアウトします。</p>
+      <button type="submit" class="btn primary wide">ログアウトする</button>
+      <p class="account-links"><a href="/">やめる</a></p>
+    </form>
+  </main>
+</body>
+</html>

@@ -88,7 +88,7 @@ npm start
 - 一度入ると、そのブラウザでは1年間入力不要です
 - 合言葉の前に開いたページ（`/account`、メールのパスワード再設定のリンク `/reset?token=…` など）は、合言葉を入力したあとにそのページへ戻ります（`/login?next=…`）。戻れるのはこのサイトの中のページだけで、外部のサイトや `/login`・`/logout` を指す値は無視して `/` へ進みます
 - 合言葉を変えて再起動すると、全員がもう一度入力することになります
-- `/logout` は、合言葉とログインの両方をログアウトします
+- `/logout` は、合言葉とログインの両方をログアウトします。アドレス欄やブックマークから開いたとき、または同じサイトのリンクから開いたときは、すぐにログアウトします。他のサイトのリンクなどから開かれたとき（`Sec-Fetch-Site` が `cross-site`・`same-site`、または付いていないとき）は、勝手にログアウトさせられないよう「ログアウトしますか？」の確認画面を出し、ボタンを押すと `POST /logout` でログアウトします
 - 同じ端末から5回続けて間違えると、1分間入力できなくなります
 - 通信は暗号化されません（HTTP）。インターネットに公開する場合は HTTPS の下で動かしてください
 
@@ -125,6 +125,7 @@ public/index.html    画面の骨組みとダイアログ
 public/account.html  ログイン・登録・パスワード再設定の画面
 public/account.js    ↑の動き
 public/login.html    合言葉の入力画面
+public/logout.html   ログアウトの確認画面
 public/iruinai-ogp.png  共有時に表示される画像（OGP）
 public/app.js        カレンダーと人の管理
 public/holidays.js   日本の祝日の計算
@@ -138,7 +139,8 @@ public/style.css     見た目
 | メソッド | パス | 内容 |
 | --- | --- | --- |
 | GET / POST | `/login` | 合言葉の入力（`ROOM_PASSWORD` 設定時のみ）。`next` に、合言葉のあとに戻るこのサイト内の場所を指定できる |
-| GET | `/logout` | ログアウト（合言葉とログインの両方。`ROOM_PASSWORD` 設定時のみ） |
+| GET | `/logout` | ログアウト（合言葉とログインの両方。`ROOM_PASSWORD` 設定時のみ）。`Sec-Fetch-Site` が `same-origin` か `none` のときだけ実行し、それ以外は確認画面を返す |
+| POST | `/logout` | ログアウトを実行して `/login` へ（確認画面のボタンの送り先。`ROOM_PASSWORD` 設定時のみ。`Sec-Fetch-Site` が `same-origin` 以外のブラウザからの送信は実行せず、確認画面を返す） |
 | GET | `/account`, `/reset` | ログイン・登録・パスワード再設定の画面（パスワード再設定のリンクは `/reset?token=…`） |
 | GET | `/api/me` | ログイン中のユーザー（未ログインは `{ "user": null }`） |
 | POST | `/api/auth/signup` | 登録の申し込み（`email`, `password`, `person_id` または `new_name`/`new_color`）。確認コードをメールで送る（メールの送信上限あり） |

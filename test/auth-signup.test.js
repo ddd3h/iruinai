@@ -235,7 +235,7 @@ test('合言葉が最初の関門のまま。合言葉なしでは登録 API に
   assert.equal((await c.post('/api/auth/signup', { email: 'a@example.com', password: 'password123', new_name: 'A' })).status, 200);
 });
 
-test('GET /logout は合言葉とセッションの Cookie を両方消す', async (t) => {
+test('GET /logout（アドレス欄から開いた = Sec-Fetch-Site: none）は合言葉とセッションの Cookie を両方消す', async (t) => {
   const srv = await startServer({ ROOM_PASSWORD: 'himitsu' });
   t.after(() => srv.stop());
   const c = new Client(srv.base);
@@ -244,7 +244,7 @@ test('GET /logout は合言葉とセッションの Cookie を両方消す', asy
   const code = codeOf(await srv.waitMail('a@example.com'));
   await c.post('/api/auth/verify', { email: 'a@example.com', code, password: 'password123' });
   assert.ok(c.jar.has('iruinai_session') && c.jar.has('iruinai_auth'));
-  const r = await c.get('/logout');
+  const r = await c.request('GET', '/logout', undefined, { headers: { 'sec-fetch-site': 'none' } });
   assert.equal(r.status, 303);
   assert.equal(c.jar.size, 0);
   const db = srv.openDb();
