@@ -1,11 +1,14 @@
 :root {
-  --bg: #f6f7f9;
+  --bg: #f4f5fb;
   --surface: #fff;
-  --text: #1f2328;
-  --muted: #6b7280;
-  --border: #e3e5e8;
+  --text: #1d2236;
+  --muted: #727a94;
+  --border: #e6e9f2;
   --primary: #4f7cff;
   --danger: #e5484d;
+  --soft: #eef1fb;          /* 切替ボタンなどの淡い背景 */
+  --shadow-sm: 0 1px 2px rgba(31, 41, 80, .06), 0 2px 6px rgba(31, 41, 80, .05);
+  --shadow-md: 0 1px 2px rgba(31, 41, 80, .05), 0 12px 32px rgba(31, 41, 80, .08);
 }
 
 * { box-sizing: border-box; }
@@ -16,6 +19,7 @@ body {
   font-family: system-ui, -apple-system, "Hiragino Sans", "Noto Sans JP", sans-serif;
   background: var(--bg);
   color: var(--text);
+  -webkit-font-smoothing: antialiased;
 }
 
 .topbar {
@@ -23,11 +27,11 @@ body {
   align-items: center;
   gap: 16px;
   flex-wrap: wrap;
-  padding: 12px 16px;
+  padding: 12px 24px;
   background: var(--surface);
-  border-bottom: 1px solid var(--border);
+  border-bottom: 1px solid rgba(31, 41, 80, .06);
 }
-.topbar h1 { font-size: 18px; margin: 0; }
+.topbar h1 { font-size: 18px; font-weight: 800; letter-spacing: .02em; margin: 0; }
 
 .people { display: flex; gap: 8px; flex-wrap: wrap; flex: 1; }
 
@@ -41,9 +45,13 @@ body {
   background: var(--surface);
   cursor: pointer;
   font-size: 14px;
+  font-weight: 600;
   user-select: none;
   white-space: nowrap;
+  box-shadow: var(--shadow-sm);
+  transition: box-shadow .15s, transform .12s, opacity .15s;
 }
+.person-chip:hover { box-shadow: 0 3px 10px rgba(31, 41, 80, .14); transform: translateY(-1px); }
 .person-chip.off { opacity: .35; }
 .person-chip .edit {
   border: none;
@@ -71,8 +79,8 @@ body {
 .avatar.small { width: 18px; height: 18px; font-size: 10px; border: 1.5px solid #fff; }
 .avatar.big { width: 72px; height: 72px; font-size: 28px; }
 
-main { padding: 16px; }
-#calendar { background: var(--surface); padding: 12px; border-radius: 12px; border: 1px solid var(--border); }
+main { padding: 20px 24px 32px; max-width: 1400px; margin: 0 auto; }
+#calendar { background: var(--surface); padding: 20px; border-radius: 24px; border: 1px solid rgba(31, 41, 80, .05); box-shadow: var(--shadow-md); }
 
 /* カレンダー内の予定 */
 .stay {
@@ -80,10 +88,12 @@ main { padding: 16px; }
   align-items: center;
   gap: 4px;
   overflow: hidden;
-  padding: 1px 2px;
+  padding: 2px 4px;
   font-size: 12px;
+  font-weight: 500;
   line-height: 1.3;
   color: #fff;
+  text-shadow: 0 1px 1px rgba(0, 0, 0, .16);
 }
 .stay .t { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .stay-head { display: flex; align-items: center; gap: 4px; min-width: 0; }
@@ -97,9 +107,6 @@ main { padding: 16px; }
 .dh-d { font-size: 15px; font-weight: 700; }
 .fc .fc-col-header-cell-cushion { text-decoration: none; color: inherit; }
 .fc .fc-daygrid-day-number { text-decoration: none; color: inherit; }
-.fc .fc-button-primary { background: var(--primary); border-color: var(--primary); }
-.fc .fc-button-primary:not(:disabled).fc-button-active,
-.fc .fc-button-primary:not(:disabled):active { background: #3a5fd0; border-color: #3a5fd0; }
 
 /* 日付の色：日曜・祝日は赤、土曜は青 */
 .fc .fc-day-sat .fc-daygrid-day-number,
@@ -203,16 +210,19 @@ dialog label.check input { width: 18px; height: 18px; }
   height: 56px;
   border: none;
   border-radius: 50%;
-  background: var(--primary);
+  background: linear-gradient(135deg, #6f90ff, var(--primary));
   color: #fff;
   font-size: 30px;
   line-height: 1;
-  box-shadow: 0 4px 14px rgba(0,0,0,.25);
+  box-shadow: 0 6px 18px rgba(79, 124, 255, .42);
   cursor: pointer;
   display: flex;
   align-items: center;
   justify-content: center;
+  transition: transform .12s, box-shadow .15s;
 }
+.fab:hover { transform: translateY(-2px); box-shadow: 0 10px 24px rgba(79, 124, 255, .5); }
+.fab:active { transform: scale(.95); }
 .fab .ico { width: 28px; height: 28px; }
 .fab.small {
   width: 46px;
@@ -221,8 +231,10 @@ dialog label.check input { width: 18px; height: 18px; }
   bottom: calc(88px + env(safe-area-inset-bottom));
   background: var(--surface);
   color: var(--text);
-  border: 1px solid var(--border);
+  border: none;
+  box-shadow: 0 4px 14px rgba(31, 41, 80, .16);
 }
+.fab.small:hover { box-shadow: 0 8px 20px rgba(31, 41, 80, .2); }
 .fab.small .ico { width: 22px; height: 22px; }
 
 /* 変更の通知（下中央）と「元に戻す」 */
@@ -237,11 +249,11 @@ dialog label.check input { width: 18px; height: 18px; }
   gap: 14px;
   max-width: calc(100vw - 32px);
   padding: 10px 12px 10px 16px;
-  border-radius: 10px;
-  background: #2b2f36;
+  border-radius: 14px;
+  background: #262b3d;
   color: #fff;
   font-size: 14px;
-  box-shadow: 0 4px 14px rgba(0,0,0,.25);
+  box-shadow: 0 8px 24px rgba(20, 28, 60, .3);
 }
 .toast-undo {
   flex-shrink: 0;
@@ -260,24 +272,27 @@ dialog label.check input { width: 18px; height: 18px; }
   display: inline-block;
   padding: 8px 14px;
   border: 1px solid var(--border);
-  border-radius: 8px;
+  border-radius: 10px;
   background: var(--surface);
   color: var(--text);
   font-size: 14px;
   cursor: pointer;
+  transition: background-color .15s, box-shadow .15s;
 }
-.btn.primary { background: var(--primary); border-color: var(--primary); color: #fff; }
+.btn:hover:not(:disabled) { background: var(--bg); }
+.btn.primary { background: var(--primary); border-color: var(--primary); color: #fff; box-shadow: 0 2px 8px rgba(79, 124, 255, .3); }
+.btn.primary:hover:not(:disabled) { background: #3f6cf0; }
 .btn.danger { color: var(--danger); border-color: var(--danger); }
 .btn.link { border: none; color: var(--muted); padding: 4px 0; }
 
 dialog {
   border: none;
-  border-radius: 14px;
-  padding: 20px;
+  border-radius: 20px;
+  padding: 22px;
   width: min(420px, calc(100vw - 32px));
-  box-shadow: 0 10px 40px rgba(0,0,0,.2);
+  box-shadow: 0 24px 64px rgba(20, 28, 60, .28);
 }
-dialog::backdrop { background: rgba(0,0,0,.35); }
+dialog::backdrop { background: rgba(24, 30, 60, .38); backdrop-filter: blur(3px); }
 dialog h2 { margin: 0 0 12px; font-size: 18px; }
 dialog label { display: block; font-size: 13px; color: var(--muted); margin: 10px 0 4px; }
 dialog select,
@@ -288,7 +303,15 @@ dialog input[type=text], dialog input[type=password], dialog input[type=date], d
   padding: 8px;
   font-size: 15px;
   border: 1px solid var(--border);
-  border-radius: 8px;
+  border-radius: 10px;
+  background: var(--surface);
+  color: var(--text);
+}
+dialog select:focus,
+dialog input[type=text]:focus, dialog input[type=password]:focus, dialog input[type=date]:focus, dialog input[type=time]:focus {
+  outline: 2px solid var(--primary);
+  outline-offset: -1px;
+  border-color: var(--primary);
 }
 dialog input[type=color] { display: block; margin-top: 4px; width: 60px; height: 34px; border: none; padding: 0; }
 .row { display: flex; gap: 12px; }
@@ -349,6 +372,102 @@ dialog select { background: var(--surface); color: var(--text); }
 body.locked .fab, body.locked .person-chip .edit { display: none; }
 body.locked .fc-event { cursor: default; }
 
+/* カレンダー本体（画面のみ。印刷は FullCalendar の標準の線のまま） */
+@media screen {
+  .fc {
+    --fc-border-color: #eceef6;
+    --fc-today-bg-color: rgba(79, 124, 255, .07);
+    --fc-neutral-bg-color: #f6f7fc;
+    --fc-highlight-color: rgba(79, 124, 255, .13);
+    --fc-now-indicator-color: #ff5d6c;
+    --fc-event-border-color: transparent;
+  }
+  .fc-theme-standard .fc-scrollgrid { border: 0; }
+
+  /* ツールバー：丸いセグメント */
+  .fc .fc-toolbar.fc-header-toolbar { margin-bottom: 14px; }
+  .fc .fc-toolbar-title { font-size: 22px; font-weight: 800; letter-spacing: .01em; }
+  .fc .fc-button-group { gap: 2px; padding: 3px; border-radius: 999px; background: var(--soft); }
+  .fc .fc-button,
+  .fc .fc-button-group > .fc-button {
+    margin: 0 !important;
+    padding: 7px 14px;
+    border: none;
+    border-radius: 999px !important;
+    background: transparent;
+    color: var(--muted);
+    font-size: 14px;
+    font-weight: 700;
+    box-shadow: none !important;
+    transition: background-color .15s, color .15s;
+  }
+  .fc .fc-button-primary:not(:disabled):hover { background: rgba(255, 255, 255, .75); color: var(--text); }
+  .fc .fc-button-primary:not(:disabled).fc-button-active,
+  .fc .fc-button-primary:not(:disabled):active {
+    background: var(--surface);
+    color: var(--primary);
+    box-shadow: 0 1px 4px rgba(31, 41, 80, .14) !important;
+  }
+  .fc .fc-button-primary:disabled { background: transparent; color: var(--muted); opacity: .45; }
+  .fc .fc-button:focus-visible { box-shadow: 0 0 0 3px rgba(79, 124, 255, .35) !important; outline: none; }
+
+  /* 曜日の見出し */
+  .fc .fc-col-header-cell { border-bottom-width: 1px; }
+  .fc .fc-col-header-cell-cushion { padding: 8px 4px; font-size: 13px; font-weight: 700; color: var(--muted); }
+  .fc .fc-col-header-cell.fc-day-today .dh-d {
+    padding: 1px 9px;
+    border-radius: 999px;
+    background: var(--primary);
+    color: #fff;
+  }
+
+  /* 日付：今日は丸く塗る */
+  .fc .fc-daygrid-day-number { padding: 4px 6px; font-size: 13px; font-weight: 600; }
+  .fc .fc-dayGridMonth-view .fc-daygrid-day.fc-day-today .fc-daygrid-day-number {
+    min-width: 26px;
+    margin: 4px 4px 0;
+    padding: 2px 4px;
+    border-radius: 999px;
+    background: var(--primary);
+    color: #fff;
+    text-align: center;
+  }
+  .fc .fc-daygrid-day.fc-day-today { background-clip: padding-box; }
+  body:not(.locked) .fc .fc-daygrid-day:hover { background: rgba(79, 124, 255, .045); }
+  .fc .fc-daygrid-more-link {
+    display: inline-block;
+    margin: 2px 4px;
+    padding: 1px 7px;
+    border-radius: 999px;
+    font-size: 11px;
+    font-weight: 700;
+    color: var(--primary);
+  }
+  .fc .fc-daygrid-more-link:hover { background: var(--soft); text-decoration: none; }
+  .fc .fc-popover { border: none; border-radius: 16px; overflow: hidden; box-shadow: 0 12px 36px rgba(20, 28, 60, .22); }
+  .fc .fc-popover-header { background: var(--soft); padding: 8px 10px; font-weight: 700; }
+
+  /* 予定：角丸のカード */
+  .fc .fc-event {
+    border-width: 0;
+    border-radius: 8px;
+    box-shadow: 0 1px 2px rgba(20, 30, 70, .12);
+    transition: box-shadow .15s, transform .12s, filter .15s;
+  }
+  .fc .fc-daygrid-event { background-image: linear-gradient(180deg, rgba(255, 255, 255, .16), rgba(255, 255, 255, 0)); }
+  .fc .fc-event:hover { box-shadow: 0 4px 12px rgba(20, 30, 70, .22); filter: brightness(1.04); }
+  body:not(.locked) .fc .fc-event:hover { transform: translateY(-1px); }
+  .fc .fc-daygrid-event-harness { margin-top: 2px; }
+  .fc .fc-event.memo-event { border-left-width: 4px; border-radius: 4px 8px 8px 4px; background-image: none; }
+  .memo { padding: 2px 5px; font-weight: 500; }
+
+  /* 週・日：時間軸 */
+  .fc .fc-timegrid-slot-label-cushion,
+  .fc .fc-timegrid-axis-cushion { font-size: 12px; color: var(--muted); }
+  .fc .fc-timegrid-slot-minor { border-top-style: dotted; }
+  .fc .fc-timegrid-now-indicator-line { border-width: 2px 0 0; }
+}
+
 @media (max-width: 600px) {
   /* ヘッダー：タイトル＋人の横スクロール一列 */
   .topbar { gap: 8px; padding: 10px 12px; flex-wrap: nowrap; }
@@ -402,7 +521,7 @@ body.locked .fc-event { cursor: default; }
   .toast { left: 12px; right: 84px; transform: none; max-width: none; justify-content: space-between; }
 
   main { padding: 0 0 88px; }
-  #calendar { padding: 8px 4px; border-radius: 0; border-left: none; border-right: none; }
+  #calendar { padding: 10px 6px; border-radius: 0; border-left: none; border-right: none; box-shadow: none; }
 
   /* ツールバー：1段目にタイトル、2段目に移動ボタンと表示切替 */
   .fc .fc-toolbar.fc-header-toolbar { flex-wrap: wrap; gap: 8px; margin-bottom: 8px; padding: 0 4px; }
@@ -472,7 +591,7 @@ dialog .export-people label.check, dialog .export-list label.check { margin: 4px
   .fc .fc-timegrid-slot-label, .fc .fc-timegrid-slot-lane { height: 11px !important; line-height: 1; padding: 0; }
   .fc .fc-timegrid-slots td { height: 11px !important; line-height: 8px; font-size: 8px; padding: 0 !important; }
   .fc .fc-timegrid-slot-label-frame, .fc .fc-timegrid-slot-label-cushion { line-height: 8px; font-size: 8px; }
-  main, #calendar { box-shadow: none; border: none; padding: 0; margin: 0; }
+  main, #calendar { box-shadow: none; border: none; border-radius: 0; padding: 0; margin: 0; max-width: none; }
 }
 
 /* ロック中の閲覧ダイアログ */
