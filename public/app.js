@@ -506,7 +506,7 @@ function kbAddStay() {
 document.addEventListener('keydown', (e) => {
   if (e.isComposing || e.ctrlKey || e.metaKey || e.altKey) return;
   // 入力中やダイアログ操作中は、文字入力などのじゃまをしない
-  if (document.querySelector('dialog[open]') || e.target.closest('input, textarea, select, [contenteditable]')) return;
+  if (document.querySelector('dialog[open]') || e.target.closest('input, textarea, select, [contenteditable], #bellPanel')) return;
   if (!kb.on) {
     if (e.key === 'i' && !e.shiftKey) { e.preventDefault(); enterKb(); }
     return;
