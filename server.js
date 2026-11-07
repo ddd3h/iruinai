@@ -47,6 +47,7 @@ const COLOR_RE = /^#[0-9a-fA-F]{6}$/;
 // 画面にそのまま見せてよい入力エラー。これ以外の予期しないエラーは、中身を返さずログにだけ残す（末尾のエラー処理）
 class InputError extends Error {}
 const { createGuard } = require('./lib/guard');
+const { reactionsRouter } = require('./lib/reactions');
 const guard = createGuard(db);
 const app = express();
 app.use(compression());
@@ -182,6 +183,7 @@ app.get(['/account', '/account.html', '/reset'], pageAccount);
 app.get('/login.html', pageLogin);
 app.get('/logout.html', pageLogout);
 app.use('/api', guard.writeGuard); // /api/auth と /api/me はこの前で処理済み
+app.use('/api', reactionsRouter(db)); // /api/reactions/* と /api/notifications/*
 
 app.get(['/', '/index.html'], pageIndex);
 app.use(express.static(path.join(__dirname, 'public')));
