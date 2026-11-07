@@ -1,0 +1,103 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>ログイン | __TITLE__</title>
+  <link rel="stylesheet" href="/style.css">
+</head>
+<body class="account-page">
+  <main class="account-card">
+    <h1>__TITLE__</h1>
+
+    <form id="view-login" hidden>
+      <h2>ログイン</h2>
+      <label>メールアドレス<input type="email" name="email" required autocomplete="username"></label>
+      <label>パスワード<input type="password" name="password" required autocomplete="current-password"></label>
+      <p class="error" data-error></p>
+      <button type="submit" class="btn primary wide">ログイン</button>
+      <p class="account-links">
+        <button type="button" class="btn link" data-go="forgot">パスワードを忘れた</button>
+        <button type="button" class="btn link" data-go="signup">新規登録</button>
+      </p>
+      <p class="account-links"><a href="/">ログインせずに見る（閲覧のみ）</a></p>
+    </form>
+
+    <form id="view-signup" hidden>
+      <h2>新規登録</h2>
+      <label>メールアドレス<input type="email" name="email" required autocomplete="username"></label>
+      <label>パスワード（8文字以上）<input type="password" name="password" required minlength="8" maxlength="128" autocomplete="new-password"></label>
+      <label>パスワード（確認）<input type="password" name="password2" required minlength="8" maxlength="128" autocomplete="new-password"></label>
+      <p class="error" data-error></p>
+      <button type="submit" class="btn primary wide">確認メールを送る</button>
+      <p class="account-links">
+        <button type="button" class="btn link" data-go="login">ログインに戻る</button>
+      </p>
+    </form>
+
+    <form id="view-code" hidden>
+      <h2>確認コード</h2>
+      <p class="hint" id="codeSent"></p>
+      <label>6桁のコード<input type="text" name="code" inputmode="numeric" pattern="[0-9]{6}" maxlength="6" required autocomplete="one-time-code"></label>
+      <p class="error" data-error></p>
+      <button type="submit" class="btn primary wide">コードを確認する</button>
+      <p class="account-links">
+        <button type="button" class="btn link" id="resendBtn">コードを再送する</button>
+        <button type="button" class="btn link" data-go="signup">入力し直す</button>
+      </p>
+    </form>
+
+    <form id="view-person" hidden>
+      <h2>あなたの人を選んでください</h2>
+      <p class="hint">メールアドレスの確認ができました。最後に、カレンダーで使う「あなたの人」を選ぶと、登録が完了します。</p>
+      <fieldset>
+        <legend>あなたの人</legend>
+        <label class="check"><input type="radio" name="mode" value="new" checked> 新しく作る</label>
+        <div id="newPerson">
+          <label>名前<input type="text" name="new_name" maxlength="20"></label>
+          <label>色<input type="color" name="new_color" value="#4f7cff"></label>
+        </div>
+        <label class="check" id="existingLabel" hidden><input type="radio" name="mode" value="existing"> すでにある人を選ぶ</label>
+        <select name="person_id" id="existingSelect" disabled hidden></select>
+        <p class="hint" id="existingHint" hidden>まだ誰も使っていない人だけ選べます。選ぶと、今ある予定とメモを引き継げます</p>
+      </fieldset>
+      <p class="error" data-error></p>
+      <button type="submit" class="btn primary wide">登録を完了する</button>
+      <p class="hint">人を選ぶまでは、登録は終わりません。やめると、ここまでの手続きは消えます。</p>
+      <p class="account-links">
+        <button type="button" class="btn link" id="cancelBtn">やめる</button>
+      </p>
+    </form>
+
+    <form id="view-forgot" hidden>
+      <h2>パスワードの再設定</h2>
+      <p class="hint">登録したメールアドレスに、再設定用のリンクを送ります。</p>
+      <label>メールアドレス<input type="email" name="email" required autocomplete="username"></label>
+      <p class="error" data-error></p>
+      <button type="submit" class="btn primary wide">リンクを送る</button>
+      <p class="account-links"><button type="button" class="btn link" data-go="login">ログインに戻る</button></p>
+    </form>
+
+    <section id="view-forgotDone" hidden>
+      <h2>メールを送りました</h2>
+      <p class="hint">登録されているメールアドレスなら、再設定用のリンクが届きます（1時間有効・1回だけ使えます）。届かないときは、迷惑メールのフォルダも見てください。</p>
+      <p class="account-links"><button type="button" class="btn link" data-go="login">ログインに戻る</button></p>
+    </section>
+
+    <form id="view-reset" hidden>
+      <h2>新しいパスワード</h2>
+      <label>パスワード（8文字以上）<input type="password" name="password" required minlength="8" maxlength="128" autocomplete="new-password"></label>
+      <label>パスワード（確認）<input type="password" name="password2" required minlength="8" maxlength="128" autocomplete="new-password"></label>
+      <p class="error" data-error></p>
+      <button type="submit" class="btn primary wide">パスワードを変更する</button>
+    </form>
+
+    <section id="view-resetDone" hidden>
+      <h2>パスワードを変更しました</h2>
+      <p class="hint">すべての端末からログアウトしました。新しいパスワードでログインしてください。</p>
+      <p class="account-links"><button type="button" class="btn link" data-go="login">ログインへ</button></p>
+    </section>
+  </main>
+  <script src="/account.js"></script>
+</body>
+</html>

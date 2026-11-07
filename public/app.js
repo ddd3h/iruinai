@@ -1,4 +1,9 @@
 let people = [];
+let me = null; // ログイン中のユーザー { id, email, person_id }。未ログインは null
+const isMe = (personId) => !!me && personId != null && personId === me.person_id;
+const myPeople = () => people.filter((p) => isMe(p.id));
+const canEditStay = (st) => isMe(st.person_id);
+const canEditMemo = (m) => !!me && (m.person_id === null || isMe(m.person_id)); // 部屋のメモは誰でも
 const ROOM = 'room'; // 部屋のメモを表すキー
 const hidden = new Set(); // 非表示中の person_id（部屋は ROOM）
 let locked = true; // 誤操作を防ぐため、ページを開いたときは必ずロックから始める
@@ -20,10 +25,33 @@ async function api(method, url, body) {
     opts.body = JSON.stringify(body);
   }
   const res = await fetch(url, opts);
-  if (res.status === 401) { location.href = '/login'; throw new Error('ログインしてください'); }
+  if (res.status === 401 && !(await res.clone().json().catch(() => ({})))?.needLogin) {
+    location.href = '/login';
+    throw new Error('ログインしてください');
+  }
   if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || '保存に失敗しました');
   return res.status === 204 ? null : res.json();
 }
+
+async function loadMe() {
+  me = (await api('GET', '/api/me')).user;
+  $('#loginBtn').hidden = !!me;
+  $('#logoutBtn').hidden = !me;
+  $('#logoutBtn').title = me ? `ログアウト（${me.email}）` : 'ログアウト';
+  if (!me && !locked) setLocked(true); // ログアウトされていたらロックに戻す
+  Reactions.onMe(me); // ベルと通知の取得は、ログイン中だけ
+}
+
+$('#loginBtn').addEventListener('click', () => { location.href = '/account'; });
+$('#logoutBtn').addEventListener('click', async () => {
+  try {
+    await api('POST', '/api/auth/logout');
+  } catch (err) {
+    showToast(err.message || 'ログアウトできませんでした', false);
+    return;
+  }
+  location.reload();
+});
 
 // アイコン要素（画像なしは頭文字＋色）
 function avatar(p, cls = '') {
@@ -172,7 +200,26 @@ function viewWhen(start, end, allDay) {
     : `${fmtViewDay(start)} ${start.slice(11, 16)} 〜 ${fmtViewDay(end)} ${end.slice(11, 16)}`;
 }
 
-function openViewDialog(kind, item) {
+// ---------- 反応欄 ----------
+let reactionPane = null; // 開いているダイアログの反応欄（閉じるときに片づける）
+function mountReactions(sectionSel, dialogSel, type, item) {
+  const section = $(sectionSel);
+  if (reactionPane) { reactionPane.destroy(); reactionPane = null; }
+  if (!item) { section.hidden = true; return; }
+  section.hidden = false;
+  const dlg = $(dialogSel);
+  const pane = Reactions.mountPane(section, {
+    type, id: item.id, ownerPersonId: item.person_id ?? null,
+    onChange: (info) => {
+      if (info && info.gone) { dlg.close(); calendar.refetchEvents(); return; }
+      Reactions.refreshSummary();
+    },
+  });
+  reactionPane = pane;
+  dlg.addEventListener('close', () => { if (reactionPane === pane) { pane.destroy(); reactionPane = null; } }, { once: true });
+}
+
+function openViewDialog(kind, item, canEdit = false) {
   const isMemo = kind === 'memo';
   const person = item.person_id == null ? null : personById(item.person_id);
   $('#viewKind').textContent = isMemo ? 'メモ' : '在室';
@@ -183,6 +230,9 @@ function openViewDialog(kind, item) {
   const note = isMemo ? '' : (item.note || '');
   $('#viewNoteRow').hidden = !note;
   $('#viewNote').textContent = note;
+  $('#viewHint').textContent = !me ? 'ログインすると、自分の予定を編集できます'
+    : canEdit ? '編集するにはロックを解除してください' : '他の人の予定は変更できません';
+  mountReactions('#viewReactions', '#viewDialog', isMemo ? 'memo' : 'stay', item);
   $('#viewDialog').showModal();
 }
 
@@ -192,6 +242,7 @@ const AUTO_LOCK_MS = 5 * 60 * 1000;
 let lockTimer;
 
 function requireUnlocked() {
+  if (!me) { showToast('ログインすると編集できます', false); return false; }
   if (!locked) return true;
   showToast('ロック中です。鍵のボタンを押すと編集できます', false);
   return false;
@@ -223,12 +274,15 @@ function setLocked(v) {
   btn.title = label;
   btn.setAttribute('aria-label', label);
   $('#importBtn').disabled = v;
-  $('#addPersonBtn').disabled = v;
   renderUndoBtn();
   armAutoLock();
 }
 
 $('#lockBtn').addEventListener('click', () => {
+  if (!me) {
+    if (confirm('ログインすると編集できます。ログイン画面を開きますか？')) location.href = '/account';
+    return;
+  }
   setLocked(!locked);
   showToast(locked ? 'ロックしました' : 'ロックを解除しました（5分操作がないと自動でロックします）', false);
 });
@@ -249,7 +303,7 @@ document.addEventListener('click', (e) => { if (!e.target.closest('.top-actions'
 document.addEventListener('keydown', (e) => { if (e.key === 'Escape') setMenu(false); });
 
 // ---------- キーボードモード ----------
-// i で入る。ロックを解除して月表示にし、操作する人を選ぶ。Excel のようにカーソルを動かして入力する
+// i で入る。ロックを解除して月表示にする（操作する人は自分に固定）。Excel のようにカーソルを動かして入力する
 const VIEW_KEYS = { m: 'dayGridMonth', w: 'timeGridWeek', d: 'timeGridDay' };
 const SLOT_MIN = 30; // 週・日表示のカーソルの刻み（分）
 
@@ -264,11 +318,11 @@ const kbEndTime = (t, n) => (toMin(t) + n >= 24 * 60 ? '23:59' : fromMin(toMin(t
 function renderKbBadge() {
   const b = $('#kbBadge');
   b.hidden = !kb.on;
-  if (kb.on) b.textContent = `キーボードモード｜${personById(kb.person)?.name || '（人を選択中）'}｜? ヘルプ｜Esc 終了`;
+  if (kb.on) b.textContent = `キーボードモード｜${personById(kb.person)?.name || ''}｜? ヘルプ｜Esc 終了`;
 }
 
 function enterKb() {
-  if (!people.length) { showToast('先に「人を追加」で人を登録してください', false); return; }
+  if (!me) { showToast('ログインしてください', false); return; }
   document.activeElement?.blur?.();
   // 今日が見えていれば今日、そうでなければ表示中の月の1日から始める
   const v = calendar.view;
@@ -277,7 +331,7 @@ function enterKb() {
   kb.time = '09:00';
   kb.anchor = null;
   kb.focus = null;
-  kb.person = people.length === 1 ? people[0].id : null; // 1人のときは選ぶ必要がない
+  kb.person = me.person_id; // 操作する人は自分に固定
   kb.on = true;
   setLocked(false);
   document.body.classList.add('kb-mode');
@@ -285,7 +339,6 @@ function enterKb() {
   showToast('キーボードモードにしました', false);
   renderKbBadge();
   applyKbCursor();
-  if (!kb.person) openKbPerson();
 }
 
 function exitKb() {
@@ -295,41 +348,12 @@ function exitKb() {
   kb.focus = null;
   kb.person = null;
   document.body.classList.remove('kb-mode');
-  if ($('#kbPersonDialog').open) $('#kbPersonDialog').close();
   applyKbCursor();
   renderKbBadge();
   setLocked(true);
   showToast('キーボードモードを終了しました（ロックしました）', false);
 }
 
-function openKbPerson() {
-  const list = $('#kbPersonList');
-  list.replaceChildren(...people.map((p, i) => {
-    const b = document.createElement('button');
-    b.type = 'button';
-    b.className = 'kb-person' + (p.id === kb.person ? ' selected' : '');
-    const k = document.createElement('kbd');
-    k.textContent = i < 9 ? String(i + 1) : '';
-    k.hidden = i >= 9;
-    b.append(k, avatar(p, 'small'), p.name);
-    b.onclick = () => { kb.person = p.id; $('#kbPersonDialog').close(); };
-    return b;
-  }));
-  $('#kbPersonDialog').showModal();
-  (list.querySelector('.selected') || list.firstElementChild).focus();
-}
-
-$('#kbPersonDialog').addEventListener('keydown', (e) => {
-  const btns = [...$('#kbPersonList').children];
-  if (/^[1-9]$/.test(e.key)) { btns[Number(e.key) - 1]?.click(); return; }
-  const i = btns.indexOf(document.activeElement);
-  if (e.key === 'ArrowDown' || e.key === 'j') { e.preventDefault(); btns[Math.min(i + 1, btns.length - 1)]?.focus(); }
-  if (e.key === 'ArrowUp' || e.key === 'k') { e.preventDefault(); btns[Math.max(i - 1, 0)]?.focus(); }
-});
-$('#kbPersonDialog').addEventListener('close', () => {
-  if (kb.on && !kb.person) exitKb(); // 最初の選択をやめたら、キーボードモードに入るのもやめる
-  renderKbBadge();
-});
 // ダイアログを閉じたあと、フォーカスが残ったボタンを Enter/Space で押してしまわないようにする
 document.querySelectorAll('dialog').forEach((d) =>
   d.addEventListener('close', () => { if (kb.on) document.activeElement?.blur?.(); }));
@@ -459,12 +483,14 @@ const kbFocused = () => (kb.focus ? calendar.getEventById(kb.focus) : null);
 
 function kbEdit(ev) {
   const { kind, stay, memo } = ev.extendedProps;
+  if (!(kind === 'memo' ? canEditMemo(memo) : canEditStay(stay))) { openViewDialog(kind, stay || memo, false); return; }
   if (kind === 'memo') openMemoDialog(memo);
   else openStayDialog(stay, new Date(stay.start), new Date(stay.end));
 }
 
 async function kbDelete(ev) {
   const { kind, stay, memo } = ev.extendedProps;
+  if (!(kind === 'memo' ? canEditMemo(memo) : canEditStay(stay))) { showToast('他の人の予定は変更できません', false); return; }
   if (await (kind === 'memo' ? deleteMemo(memo) : deleteStay(stay))) kb.focus = null;
 }
 
@@ -480,7 +506,7 @@ function kbAddStay() {
 document.addEventListener('keydown', (e) => {
   if (e.isComposing || e.ctrlKey || e.metaKey || e.altKey) return;
   // 入力中やダイアログ操作中は、文字入力などのじゃまをしない
-  if (document.querySelector('dialog[open]') || e.target.closest('input, textarea, select, [contenteditable]')) return;
+  if (document.querySelector('dialog[open]') || e.target.closest('input, textarea, select, [contenteditable], #bellPanel')) return;
   if (!kb.on) {
     if (e.key === 'i' && !e.shiftKey) { e.preventDefault(); enterKb(); }
     return;
@@ -515,7 +541,6 @@ document.addEventListener('keydown', (e) => {
     case 'e': if (ev) { e.preventDefault(); kbEdit(ev); } break;
     case 'x': case 'Delete': case 'Backspace': if (ev) { e.preventDefault(); kbDelete(ev); } break;
     case 'n': e.preventDefault(); openMemoDialog(null, { dates: kbSelection().dates, allDay: true }); break;
-    case 'p': e.preventDefault(); openKbPerson(); break;
     case 'u': e.preventDefault(); undoLast(); break;
     case 't': e.preventDefault(); kbGoto(toDate(new Date())); break;
     case 'Tab': e.preventDefault(); kbCycle(e.shiftKey ? -1 : 1); break;
@@ -545,6 +570,73 @@ const putBack = (kind, row) => {
   });
 };
 
+// ---------- サイドバー（表示する人） ----------
+// 人のチップ一覧（表示／非表示の切り替え）は、ふだんは上のバーに 1 行で並べる。
+// 幅が狭いとき（600px 以下）か、人が増えて 1 行に収まらなくなったときは、左上の三本線で開くサイドバーに移す
+const peopleBox = $('#people');
+const peopleHome = peopleBox.parentNode;
+const peopleAnchor = peopleBox.nextElementSibling;
+const mqSide = window.matchMedia('(max-width: 600px)');
+let sidebarOpen = false;
+let sideMode = false;
+let printing = false;
+
+function setSidebar(open, restoreFocus = true) {
+  if (open && !sideMode) return;
+  sidebarOpen = open;
+  $('#sidebar').classList.toggle('open', open);
+  $('#sideOverlay').hidden = !open;
+  $('#sideBtn').setAttribute('aria-expanded', String(open));
+  document.body.classList.toggle('side-open', open);
+  if (open) $('#sidebar').focus();
+  else {
+    if (restoreFocus) $('#sideBtn').focus();
+    scheduleSide(); // 開いている間は測らなかったので、閉じたら測り直す
+  }
+}
+function toTop() {
+  document.body.classList.remove('side-mode');
+  if (peopleBox.parentNode !== peopleHome) peopleHome.insertBefore(peopleBox, peopleAnchor);
+}
+function toSide() {
+  sideMode = true;
+  document.body.classList.add('side-mode');
+  if (peopleBox.parentNode !== $('#sidePeople')) $('#sidePeople').append(peopleBox);
+}
+// 上のバーに置いたとき、チップが 1 行に収まっているか（どれかが次の行に回っていないか）
+function peopleFit() {
+  const chips = peopleBox.children;
+  if (chips.length < 2) return true;
+  const top = chips[0].getBoundingClientRect().top;
+  for (const c of chips) if (Math.abs(c.getBoundingClientRect().top - top) > 2) return false;
+  return true;
+}
+// どちらにするかは、いつも「上のバーに置いて測る」で決める（サイドバーに入れたまま測ると、戻る境目が決まらない）。測るのは描画の前なので、ちらつかない
+function updateSide() {
+  if (printing || sidebarOpen) return;
+  let on = mqSide.matches;
+  if (!on) { toTop(); on = !peopleFit(); }
+  if (on) toSide();
+  else { sideMode = false; setSidebar(false, false); }
+}
+let sideFrame = 0;
+function scheduleSide() {
+  if (sideFrame) return;
+  sideFrame = requestAnimationFrame(() => { sideFrame = 0; updateSide(); });
+}
+$('#sideBtn').addEventListener('click', () => setSidebar(!sidebarOpen));
+$('#sideClose').addEventListener('click', () => setSidebar(false));
+$('#sideOverlay').addEventListener('click', () => setSidebar(false));
+$('#sidebar').addEventListener('keydown', (e) => { if (e.key === 'Escape') { e.stopPropagation(); setSidebar(false); } });
+mqSide.addEventListener('change', () => { if (sidebarOpen && !mqSide.matches) setSidebar(false, false); updateSide(); });
+window.addEventListener('resize', scheduleSide);
+if (window.ResizeObserver) new ResizeObserver(scheduleSide).observe(document.querySelector('.top-actions')); // ログインでボタンが増えたときなど
+if (document.fonts && document.fonts.ready) document.fonts.ready.then(scheduleSide);
+// 印刷では、人の一覧を上のバーに戻す
+window.addEventListener('beforeprint', () => { printing = true; toTop(); });
+window.addEventListener('afterprint', () => { printing = false; updateSide(); });
+updateSide();
+
 // ---------- 上部の人一覧 ----------
 function renderPeople() {
   const box = $('#people');
@@ -566,12 +658,14 @@ function renderPeople() {
     chip.style.borderColor = p.color;
     chip.title = 'クリックで表示/非表示';
     chip.append(avatar(p), p.name);
-    const edit = document.createElement('button');
-    edit.className = 'edit';
-    edit.append(icon('pencil'));
-    edit.title = '編集';
-    edit.onclick = (e) => { e.stopPropagation(); if (requireUnlocked()) openPersonDialog(p); };
-    chip.append(edit);
+    if (isMe(p.id)) {
+      const edit = document.createElement('button');
+      edit.className = 'edit';
+      edit.append(icon('pencil'));
+      edit.title = '編集';
+      edit.onclick = (e) => { e.stopPropagation(); if (requireUnlocked()) { setSidebar(false, false); openPersonDialog(p); } };
+      chip.append(edit);
+    }
     chip.onclick = () => {
       hidden.has(p.id) ? hidden.delete(p.id) : hidden.add(p.id);
       renderPeople();
@@ -579,6 +673,7 @@ function renderPeople() {
     };
     box.append(chip);
   }
+  scheduleSide(); // 人が増えた・名前が変わったら、1 行に収まるかを測り直す
 }
 
 async function loadPeople() {
@@ -644,6 +739,7 @@ function initCalendar() {
             return {
               id: 's' + st.id, start: st.start, end: st.end,
               backgroundColor: p.color, borderColor: p.color,
+              ...(canEditStay(st) ? {} : { editable: false }), // 他人の予定は動かせない（自分のものは全体の editable に従う）
               extendedProps: { kind: 'stay', stay: st },
             };
           });
@@ -661,6 +757,7 @@ function initCalendar() {
               borderColor: p ? p.color : '#8a919c',
               textColor: '#1f2328',
               classNames: ['memo-event'],
+              ...(canEditMemo(m) ? {} : { editable: false }),
               extendedProps: { kind: 'memo', memo: m },
             };
           });
@@ -676,10 +773,10 @@ function initCalendar() {
       const label = document.createElement('span');
       label.className = 'holiday-name';
       label.textContent = name;
-      top.prepend(label);
+      top.append(label); // 日付欄は右から並べる（row-reverse）ので、数字のあとに足すと、数字は右端のまま、祝日名がその左に入る
     },
-    eventDidMount: (arg) => { arg.el.dataset.eid = arg.event.id; },
-    eventsSet: () => requestAnimationFrame(applyKbCursor),
+    eventDidMount: (arg) => { arg.el.dataset.eid = arg.event.id; Reactions.decorateEl(arg.el); },
+    eventsSet: () => { requestAnimationFrame(applyKbCursor); Reactions.refreshSummary(); },
     datesSet: (info) => {
       requestAnimationFrame(applyKbCursor);
       if (!calendar) return;
@@ -743,7 +840,8 @@ function initCalendar() {
     },
     eventClick: (info) => {
       const { kind, stay, memo } = info.event.extendedProps;
-      if (locked) return openViewDialog(kind, stay || memo); // ロック中は内容を見るだけ
+      const canEdit = kind === 'memo' ? canEditMemo(memo) : canEditStay(stay);
+      if (locked || !canEdit) return openViewDialog(kind, stay || memo, canEdit); // ロック中・他人のものは内容を見るだけ
       if (kind === 'memo') return openMemoDialog(memo);
       openStayDialog(stay, new Date(stay.start), new Date(stay.end));
     },
@@ -832,7 +930,7 @@ let pickedPerson = null;
 function renderPicker() {
   const box = $('#personPicker');
   box.replaceChildren();
-  for (const p of people) {
+  for (const p of myPeople()) {
     const b = document.createElement('button');
     b.type = 'button';
     b.className = p.id === pickedPerson ? 'selected' : '';
@@ -906,12 +1004,9 @@ $('#clearDates').addEventListener('click', () => { selectedDates.clear(); render
 $('#memoClearDates').addEventListener('click', () => { selectedDates.clear(); renderMiniCal(); });
 
 function openStayDialog(stay, start, end, dates = []) {
-  if (!people.length) {
-    alert('先に「＋ 人を追加」で人を登録してください');
-    return;
-  }
+  if (!me) return;
   editingStay = stay;
-  pickedPerson = stay ? stay.person_id : (kb.on && kb.person) || (people.length === 1 ? people[0].id : null);
+  pickedPerson = me.person_id; // 在室は自分の分だけ
   const f = $('#stayForm');
   $('#stayTitle').textContent = stay ? '在室を編集' : '在室を追加';
   f.date.value = toDate(start);
@@ -931,6 +1026,7 @@ function openStayDialog(stay, start, end, dates = []) {
   $('#stayDelete').hidden = !stay;
   $('#stayError').textContent = '';
   renderPicker();
+  mountReactions('#stayReactions', '#stayDialog', 'stay', stay);
   $('#stayDialog').showModal();
   if (kb.on) f.startTime.focus(); // キーボードモードでは時刻から打ち始められる
 }
@@ -991,7 +1087,7 @@ function renderMemoPicker() {
   room.append(roomAvatar(), '部屋');
   room.onclick = () => { memoTarget = ROOM; renderMemoPicker(); };
   box.append(room);
-  for (const p of people) {
+  for (const p of myPeople()) {
     const b = document.createElement('button');
     b.type = 'button';
     b.className = p.id === memoTarget ? 'selected' : '';
@@ -1101,6 +1197,7 @@ function openMemoDialog(memo, opts = {}) {
   }
   renderMemoPicker();
   updateMemoFields();
+  mountReactions('#memoReactions', '#memoDialog', 'memo', memo);
   $('#memoDialog').showModal();
   if (kb.on) f.title.focus();
 }
@@ -1218,10 +1315,8 @@ function openPersonDialog(person) {
   resetPreviewUrl();
   const f = $('#personForm');
   f.reset();
-  $('#personTitle').textContent = person ? '人を編集' : '人を追加';
-  f.name.value = person ? person.name : '';
-  f.color.value = person ? person.color : ['#4f7cff', '#f59e0b', '#10b981', '#ec4899', '#8b5cf6'][people.length % 5];
-  $('#personDelete').hidden = !person;
+  f.name.value = person.name;
+  f.color.value = person.color;
   $('#personError').textContent = '';
   updatePreview();
   $('#personDialog').showModal();
@@ -1283,13 +1378,8 @@ $('#personForm').addEventListener('submit', async (e) => {
   }
   if (removeIcon) fd.append('removeIcon', '1');
   try {
-    if (editingPerson) {
-      const r = await api('PUT', `/api/people/${editingPerson.id}`, fd);
-      pushUndo(`${r.before.name}を変更しました`, () => api('POST', '/api/people/restore', { person: r.before }));
-    } else {
-      const r = await api('POST', '/api/people', fd);
-      pushUndo(`${r.name}を追加しました`, () => api('DELETE', `/api/people/${r.id}`));
-    }
+    const r = await api('PUT', `/api/people/${editingPerson.id}`, fd);
+    pushUndo(`${r.before.name}を変更しました`, () => api('POST', '/api/people/restore', { person: r.before }));
     $('#personDialog').close();
     await loadPeople();
     calendar.refetchEvents();
@@ -1298,16 +1388,26 @@ $('#personForm').addEventListener('submit', async (e) => {
   }
 });
 
-$('#personDelete').addEventListener('click', async () => {
-  if (!editingPerson || !confirm(`${editingPerson.name} を削除しますか？\nこの人の在室記録とメモもすべて消えます。`)) return;
-  const deleted = await api('DELETE', `/api/people/${editingPerson.id}`);
+// 退会：パスワードを確かめてから、人・在室・メモ・アカウントをすべて消す（元に戻せない）
+$('#personDelete').addEventListener('click', () => {
+  if (!editingPerson || !isMe(editingPerson.id)) return;
+  $('#withdrawForm').reset();
+  $('#withdrawError').textContent = '';
   $('#personDialog').close();
-  pushUndo(`${deleted.person.name}を削除しました`, () => api('POST', '/api/people/restore', deleted));
-  await loadPeople();
-  calendar.refetchEvents();
+  $('#withdrawDialog').showModal();
 });
-
-$('#addPersonBtn').addEventListener('click', () => { if (requireUnlocked()) openPersonDialog(null); });
+$('#withdrawForm').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const submit = $('#withdrawForm button[type="submit"]');
+  submit.disabled = true; // 送信中の二重押しを防ぐ（成功すると再読み込みされる）
+  try {
+    await api('POST', '/api/me/withdraw', { password: e.target.password.value });
+    location.reload();
+  } catch (err) {
+    $('#withdrawError').textContent = err.message;
+    submit.disabled = false;
+  }
+});
 
 // 表示中の日（今日が範囲内なら今日）
 function defaultDay() {
@@ -1406,7 +1506,7 @@ const SKIP_LABEL = { allDay: '終日', multi: '日またぎ', bad: '時刻が不
 function renderImportPicker() {
   const box = $('#importPicker');
   box.replaceChildren();
-  for (const p of people) {
+  for (const p of myPeople()) {
     const b = document.createElement('button');
     b.type = 'button';
     b.className = p.id === importPerson ? 'selected' : '';
@@ -1435,7 +1535,7 @@ function updateImportSummary() {
 
 function openImportDialog(name, events, error) {
   importEvents = events;
-  importPerson = people.length === 1 ? people[0].id : null;
+  importPerson = me ? me.person_id : null;
   $('#importFileName').textContent = name;
   $('#importError').textContent = error || '';
   const byTitle = new Map();
@@ -1697,14 +1797,25 @@ document.querySelectorAll('[data-close]').forEach((b) =>
 // 他の人の変更を拾うため、タブに戻ったときに再読込
 document.addEventListener('visibilitychange', async () => {
   if (document.visibilityState === 'visible') {
+    await loadMe();
     await loadPeople();
     calendar.refetchEvents();
   }
 });
 
+Reactions.init({
+  api,
+  getMe: () => me,
+  // 今の表示期間（予定の保存形式と同じ、時差なしのローカル時刻）
+  getRange: () => (calendar && calendar.view
+    ? { from: toLocalIso(calendar.view.activeStart), to: toLocalIso(calendar.view.activeEnd) } : null),
+  gotoDate: (date) => calendar.gotoDate(date),
+});
+
 (async () => {
   initCalendar();
   setLocked(true);
+  await loadMe();
   await loadPeople();
   calendar.refetchEvents();
 })();

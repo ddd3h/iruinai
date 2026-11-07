@@ -3,10 +3,10 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>在室カレンダー</title>
+  <title>__TITLE__</title>
   <meta property="og:type" content="website">
-  <meta property="og:site_name" content="在室カレンダー">
-  <meta property="og:title" content="在室カレンダー">
+  <meta property="og:site_name" content="__TITLE__">
+  <meta property="og:title" content="__TITLE__">
   <meta property="og:description" content="部屋に誰がいつ居るかを、みんなで共有するカレンダー">
   <meta property="og:image" content="__ORIGIN__/iruinai-ogp.png">
   <meta property="og:image:width" content="1200">
@@ -19,10 +19,13 @@
 </head>
 <body class="locked">
   <header class="topbar">
-    <h1>在室カレンダー</h1>
+    <button id="sideBtn" class="top-btn ghost side-btn" type="button" aria-controls="sidebar" aria-expanded="false" title="表示する人" aria-label="表示する人を選ぶ"><svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M4 7h16M4 12h16M4 17h16"/></svg></button>
+    <h1>__TITLE__</h1>
     <div id="printTitle" class="print-only"></div>
     <div id="people" class="people"></div>
     <div class="top-actions">
+      <button id="loginBtn" class="top-btn primary" type="button" hidden>ログイン</button>
+      <button id="bellBtn" class="top-btn ghost bell-btn" type="button" hidden aria-haspopup="dialog" aria-expanded="false" aria-controls="bellPanel" title="通知" aria-label="通知"><svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 9a6 6 0 0 1 12 0c0 6 2.5 7.5 2.5 7.5h-17S6 15 6 9z"/><path d="M10 20a2 2 0 0 0 4 0"/></svg><span id="bellBadge" class="bell-badge" hidden></span></button>
       <button id="lockBtn" class="top-btn ghost lock-btn" type="button" aria-pressed="false" title="ロック中（押すと編集できます）" aria-label="ロック中（押すと編集できます）"><svg class="ico ico-locked" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/></svg><svg class="ico ico-unlocked" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V8a4 4 0 0 1 7.5-2"/></svg></button>
       <button id="menuBtn" class="top-btn ghost menu-btn" type="button" aria-haspopup="true" aria-expanded="false" title="メニュー" aria-label="メニュー"><svg class="ico" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><circle cx="5" cy="12" r="1.8"/><circle cx="12" cy="12" r="1.8"/><circle cx="19" cy="12" r="1.8"/></svg></button>
       <div id="actionMenu" class="action-menu">
@@ -31,10 +34,32 @@
       <input type="file" id="importFile" accept=".csv,text/csv" hidden>
       <button id="exportBtn" class="top-btn ghost" title="CSVを出力" aria-label="CSVを出力"><svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3v12"/><path d="M7 10l5 5 5-5"/><path d="M4 20h16"/></svg><span class="menu-label">CSVを出力</span></button>
       <button id="printBtn" class="top-btn ghost" title="印刷（Ctrl+P）" aria-label="印刷"><svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7 9V3h10v6"/><rect x="3" y="9" width="18" height="8" rx="2"/><path d="M7 14h10v7H7z"/></svg><span class="menu-label">印刷</span></button>
-      <button id="addPersonBtn" class="top-btn primary" title="人を追加" aria-label="人を追加"><svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="9" cy="9" r="4"/><path d="M2 21v-1a7 7 0 0 1 14 0v1"/><path d="M19 2v6M16 5h6"/></svg><span class="label">追加</span><span class="menu-label">人を追加</span></button>
+      <button id="logoutBtn" class="top-btn ghost" type="button" hidden title="ログアウト" aria-label="ログアウト"><svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><path d="M16 17l5-5-5-5"/><path d="M21 12H9"/></svg><span class="menu-label">ログアウト</span></button>
       </div>
     </div>
   </header>
+
+  <!-- スマホ: 「表示する人」を入れるサイドバー -->
+  <div id="sideOverlay" class="side-overlay" hidden></div>
+  <aside id="sidebar" class="sidebar" aria-label="表示する人" tabindex="-1">
+    <div class="side-head">
+      <strong class="side-title">__TITLE__</strong>
+      <button type="button" id="sideClose" class="side-close" aria-label="閉じる">×</button>
+    </div>
+    <p class="side-label">表示する人</p>
+    <p class="hint side-hint">タップで、その人の予定を表示／非表示にします</p>
+    <div id="sidePeople" class="side-people"></div>
+  </aside>
+
+  <!-- 反応の履歴 -->
+  <div id="bellPanel" class="bell-panel" role="dialog" aria-label="反応の履歴" tabindex="-1" hidden>
+    <div class="bell-head">
+      <strong>反応</strong>
+      <label class="bell-sound"><input type="checkbox" id="soundToggle" checked> 音</label>
+      <button type="button" id="bellClose" class="bell-close" aria-label="閉じる">×</button>
+    </div>
+    <ul id="bellList" class="bell-list"></ul>
+  </div>
 
   <main>
     <div id="calendar"></div>
@@ -50,15 +75,6 @@
     <span id="toastText"></span>
     <button type="button" id="toastUndo" class="toast-undo">元に戻す</button>
   </div>
-
-  <!-- キーボードモード：操作する人の選択 -->
-  <dialog id="kbPersonDialog">
-    <div>
-      <h2>だれで操作しますか？</h2>
-      <p class="hint">数字キーか ↑↓ で選んで、Enter で決定。Esc でやめる</p>
-      <div id="kbPersonList" class="kb-person-list"></div>
-    </div>
-  </dialog>
 
   <!-- キーボードモード：キー一覧 -->
   <dialog id="kbHelpDialog">
@@ -78,7 +94,6 @@
         <tr><th><kbd>Tab</kbd></th><td>その日のイベントを順に選ぶ（<kbd>Shift</kbd>+<kbd>Tab</kbd> で逆順）</td></tr>
         <tr><th><kbd>e</kbd></th><td>選んだイベントを編集</td></tr>
         <tr><th><kbd>x</kbd><kbd>Delete</kbd></th><td>選んだイベントを削除</td></tr>
-        <tr><th><kbd>p</kbd></th><td>操作する人を変える</td></tr>
         <tr><th><kbd>u</kbd></th><td>元に戻す（<kbd>Ctrl</kbd>+<kbd>Z</kbd> も可）</td></tr>
         <tr><th><kbd>?</kbd></th><td>このヘルプ</td></tr>
       </table>
@@ -99,7 +114,8 @@
         <dt>日時</dt><dd id="viewWhen"></dd>
         <div id="viewNoteRow"><dt id="viewNoteLabel">メモ</dt><dd id="viewNote"></dd></div>
       </dl>
-      <p class="hint">編集するにはロックを解除してください</p>
+      <section id="viewReactions" class="rx-section" aria-label="反応"></section>
+      <p class="hint" id="viewHint"></p>
       <div class="actions">
         <span class="spacer"></span>
         <button type="button" class="btn primary" data-close>閉じる</button>
@@ -133,6 +149,7 @@
         <label>終了<input type="time" name="endTime" required step="60"></label>
       </div>
       <label>メモ<input type="text" name="note" maxlength="100" placeholder="任意"></label>
+      <section id="stayReactions" class="rx-section" aria-label="反応" hidden></section>
       <p class="error" id="stayError"></p>
       <div class="actions">
         <button type="button" id="stayDelete" class="btn danger">削除</button>
@@ -189,6 +206,7 @@
           <p class="hint" id="memoRepeatInfo"></p>
         </div>
       </div>
+      <section id="memoReactions" class="rx-section" aria-label="反応" hidden></section>
       <p class="error" id="memoError"></p>
       <div class="actions">
         <button type="button" id="memoDelete" class="btn danger">削除</button>
@@ -256,10 +274,10 @@
     </form>
   </dialog>
 
-  <!-- 人の追加・編集 -->
+  <!-- 人の編集 -->
   <dialog id="personDialog">
     <form id="personForm" method="dialog">
-      <h2 id="personTitle">人を追加</h2>
+      <h2 id="personTitle">人を編集</h2>
       <div class="icon-edit">
         <div id="iconPreview" class="avatar big"></div>
         <div>
@@ -271,7 +289,7 @@
       <label>色<input type="color" name="color" value="#4f7cff"></label>
       <p class="error" id="personError"></p>
       <div class="actions">
-        <button type="button" id="personDelete" class="btn danger">削除</button>
+        <button type="button" id="personDelete" class="btn danger">退会</button>
         <span class="spacer"></span>
         <button type="button" class="btn" data-close>キャンセル</button>
         <button type="submit" class="btn primary">保存</button>
@@ -279,7 +297,23 @@
     </form>
   </dialog>
 
+  <!-- 退会：自分の人・在室・メモ・アカウントをすべて消す -->
+  <dialog id="withdrawDialog">
+    <form id="withdrawForm" method="dialog">
+      <h2>退会する</h2>
+      <p class="hint">アカウントと、あなたの在室・メモがすべて消えます。元に戻せません。</p>
+      <label>パスワード<input type="password" name="password" required autocomplete="current-password"></label>
+      <p class="error" id="withdrawError"></p>
+      <div class="actions">
+        <span class="spacer"></span>
+        <button type="button" class="btn" data-close>キャンセル</button>
+        <button type="submit" class="btn danger">退会する</button>
+      </div>
+    </form>
+  </dialog>
+
   <script src="/holidays.js"></script>
+  <script src="/reactions.js"></script>
   <script src="/app.js"></script>
 </body>
 </html>
