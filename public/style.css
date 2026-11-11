@@ -325,6 +325,27 @@ dialog select { background: var(--surface); color: var(--text); }
 .error { color: var(--danger); font-size: 13px; min-height: 1em; margin: 8px 0 0; }
 .hint { color: var(--muted); font-size: 12px; margin: 4px 0 0; }
 
+/* APIトークンのダイアログ */
+#tokenForm .hint .ln { display: block; }
+.token-status { margin: 10px 0 0; font-size: 13px; line-height: 1.5; white-space: pre-line; }
+.token-row { display: flex; gap: 8px; align-items: center; }
+.token-row input { flex: 1; min-width: 0; margin-top: 0; text-overflow: ellipsis; }
+.token-row .btn { flex-shrink: 0; min-width: 96px; text-align: center; white-space: nowrap; }
+.token-usage {
+  margin: 0;
+  padding: 8px 10px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  font: 12px/1.5 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  color: var(--text);
+  white-space: pre;
+  overflow-x: auto;
+}
+#tokenForm .error:empty { display: none; }
+#tokenForm .actions .btn { white-space: nowrap; }
+#tokenForm .actions { margin-top: 16px; }
+
 .picker { display: flex; gap: 10px; flex-wrap: wrap; }
 .picker button {
   display: flex;

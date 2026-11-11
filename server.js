@@ -11,7 +11,7 @@ const multer = require('multer');
 const crypto = require('crypto');
 const { db, UPLOAD_DIR, inTransaction } = require('./lib/db');
 const { readCookie } = require('./lib/cookies');
-const { authRouter, meRouter, attachUser, cleanup: cleanupAuth, destroySession, mailMode, configWarnings } = require('./lib/auth');
+const { authRouter, meRouter, attachUser, bearerAuth, noToken, cleanup: cleanupAuth, destroySession, mailMode, configWarnings } = require('./lib/auth');
 const { appTitle } = require('./lib/appTitle');
 
 const ALLOWED_EXT = { 'image/png': '.png', 'image/jpeg': '.jpg', 'image/gif': '.gif', 'image/webp': '.webp' };
@@ -48,6 +48,7 @@ const COLOR_RE = /^#[0-9a-fA-F]{6}$/;
 class InputError extends Error {}
 const { createGuard } = require('./lib/guard');
 const { reactionsRouter } = require('./lib/reactions');
+const { apiDoc } = require('./lib/api-doc');
 const guard = createGuard(db);
 const app = express();
 app.use(compression());
@@ -130,6 +131,9 @@ const pageLogout = sendPage('logout.html');
 // SNS のプレビュー用クローラーはログインできないので、OGP 画像だけは合言葉なしで配る
 app.get('/iruinai-ogp.png', (req, res) => res.sendFile(path.join(__dirname, 'public/iruinai-ogp.png')));
 
+// API トークン（Authorization: Bearer）。合言葉の門より前に置く。合えば req.user が入り、/api/* は合言葉もログインも要らない
+app.use('/api', bearerAuth);
+
 if (PASSWORD) {
   app.get('/login', (req, res) => pageLogin(req, res));
 
@@ -168,6 +172,7 @@ if (PASSWORD) {
   });
 
   app.use((req, res, next) => {
+    if (req.viaToken) return next(); // API トークンは合言葉の代わりになる（bearerAuth は /api/* にしか付けていない）
     if (sameText(readCookie(req, COOKIE), TOKEN)) return next();
     if (req.path.startsWith('/api/')) return res.status(401).json({ error: 'ログインしてください' });
     res.redirect(303, loginUrlFor(req));
@@ -176,12 +181,13 @@ if (PASSWORD) {
 
 // ---- アカウント ----
 app.use(attachUser);
-app.use('/api/auth', authRouter);
-app.use('/api/me', meRouter);
+app.use('/api/auth', noToken, authRouter);
+app.use('/api/me', noToken, meRouter);
 app.get(['/account', '/account.html', '/reset'], pageAccount);
 // プレースホルダー（__TITLE__ など）を持つ HTML は、.html のアドレスで開かれても置き換えて返す（下の express.static が生のまま配らないように）
 app.get('/login.html', pageLogin);
 app.get('/logout.html', pageLogout);
+app.get('/api/docs', apiDoc(PUBLIC_URL)); // AI に渡す API の仕様書。合言葉の内側（トークンなら通る）
 app.use('/api', guard.writeGuard); // /api/auth と /api/me はこの前で処理済み
 app.use('/api', reactionsRouter(db)); // /api/reactions/* と /api/notifications/*
 
