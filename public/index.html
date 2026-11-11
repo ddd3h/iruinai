@@ -317,14 +317,20 @@
   <dialog id="tokenDialog">
     <form id="tokenForm" method="dialog">
       <h2>APIトークン</h2>
-      <p class="hint">AI やスクリプトが、あなたの代わりに API を使うための合鍵です。あなたの在室・メモを見たり変えたりできます（退会やパスワードの操作はできません）。1つだけ作れ、<strong>1週間使われないと自動で無効</strong>になります。人に見せないでください。</p>
-      <p class="hint" id="tokenStatus"></p>
+      <p class="hint"><span class="ln">AI やスクリプトに渡す、あなた専用の合鍵です。</span><span class="ln">1週間使われないと無効になります。</span></p>
+      <p class="token-status" id="tokenStatus"></p>
       <div id="tokenShown" hidden>
-        <label>トークン（この画面を閉じると二度と見られません）<input type="text" id="tokenValue" readonly></label>
-        <button type="button" id="tokenCopy" class="btn">コピー</button>
-        <p class="hint" id="tokenUsage"></p>
+        <label for="tokenValue">トークン</label>
+        <div class="token-row">
+          <input type="text" id="tokenValue" readonly>
+          <button type="button" id="tokenCopy" class="btn">コピー</button>
+        </div>
+        <p class="hint"><span class="ln">この画面を閉じると二度と見られません。</span><span class="ln">人に見せないでください。</span></p>
+        <label>使い方</label>
+        <pre class="token-usage" id="tokenUsage"></pre>
       </div>
       <label>パスワード<input type="password" name="password" required autocomplete="current-password"></label>
+      <p class="hint" id="tokenRebuildNote" hidden>作り直すと、今のトークンは使えなくなります。</p>
       <p class="error" id="tokenError"></p>
       <div class="actions">
         <button type="button" id="tokenRevoke" class="btn danger" hidden>無効にする</button>

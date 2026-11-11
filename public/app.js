@@ -1410,12 +1410,17 @@ $('#withdrawForm').addEventListener('submit', async (e) => {
 });
 
 // APIトークン：発行（パスワードが要る）・作り直し・無効にする。本体は、発行した直後の応答にしか入っていない
-const tokenDays = (ms) => Math.max(1, Math.ceil((ms - Date.now()) / 86400000));
+// 残り日数。最長は 7日（lib/auth.js の API_TOKEN_IDLE_MS）なので、端末の時計がサーバより遅れていても 7日を超えて見せない
+const TOKEN_MAX_DAYS = 7;
+const tokenDays = (ms) => Math.min(TOKEN_MAX_DAYS, Math.max(1, Math.ceil((ms - Date.now()) / 86400000)));
 async function loadToken() {
   const { token } = await api('GET', '/api/me/token');
-  const used = token && (token.last_used_at ? `最後に使った時刻: ${new Date(token.last_used_at).toLocaleString('ja-JP')}` : 'まだ使われていません');
-  $('#tokenStatus').textContent = token ? `有効です（あと${tokenDays(token.expires_at)}日。${used}）` : 'トークンは発行されていません';
-  $('#tokenSubmit').textContent = token ? '作り直す（今のトークンは使えなくなります）' : '発行する';
+  const used = token && (token.last_used_at
+    ? `最後に使った時刻: ${new Date(token.last_used_at).toLocaleString('ja-JP', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' })}`
+    : 'まだ使われていません');
+  $('#tokenStatus').textContent = token ? `有効です（あと${tokenDays(token.expires_at)}日）\n${used}` : 'トークンは発行されていません';
+  $('#tokenSubmit').textContent = token ? '作り直す' : '発行する';
+  $('#tokenRebuildNote').hidden = !token;
   $('#tokenRevoke').hidden = !token;
 }
 function hideTokenValue() {
@@ -1446,7 +1451,7 @@ $('#tokenForm').addEventListener('submit', async (e) => {
     const r = await api('POST', '/api/me/token', { password: e.target.password.value });
     e.target.password.value = '';
     $('#tokenValue').value = r.token;
-    $('#tokenUsage').textContent = `使い方: curl -H "Authorization: Bearer ${r.token}" "${location.origin}/api/stays?start=2030-01-01&end=2030-02-01"`;
+    $('#tokenUsage').textContent = `curl -H "Authorization: Bearer ${r.token}" \\\n  ${location.origin}/api/me`;
     $('#tokenShown').hidden = false;
     await loadToken();
   } catch (err) {
