@@ -290,6 +290,7 @@
       <p class="error" id="personError"></p>
       <div class="actions">
         <button type="button" id="personDelete" class="btn danger">退会</button>
+        <button type="button" id="tokenBtn" class="btn">APIトークン</button>
         <span class="spacer"></span>
         <button type="button" class="btn" data-close>キャンセル</button>
         <button type="submit" class="btn primary">保存</button>
@@ -308,6 +309,28 @@
         <span class="spacer"></span>
         <button type="button" class="btn" data-close>キャンセル</button>
         <button type="submit" class="btn danger">退会する</button>
+      </div>
+    </form>
+  </dialog>
+
+  <!-- APIトークン：AI やスクリプトが、自分の代わりに API を使うための合鍵（1つだけ。1週間使わないと無効） -->
+  <dialog id="tokenDialog">
+    <form id="tokenForm" method="dialog">
+      <h2>APIトークン</h2>
+      <p class="hint">AI やスクリプトが、あなたの代わりに API を使うための合鍵です。あなたの在室・メモを見たり変えたりできます（退会やパスワードの操作はできません）。1つだけ作れ、<strong>1週間使われないと自動で無効</strong>になります。人に見せないでください。</p>
+      <p class="hint" id="tokenStatus"></p>
+      <div id="tokenShown" hidden>
+        <label>トークン（この画面を閉じると二度と見られません）<input type="text" id="tokenValue" readonly></label>
+        <button type="button" id="tokenCopy" class="btn">コピー</button>
+        <p class="hint" id="tokenUsage"></p>
+      </div>
+      <label>パスワード<input type="password" name="password" required autocomplete="current-password"></label>
+      <p class="error" id="tokenError"></p>
+      <div class="actions">
+        <button type="button" id="tokenRevoke" class="btn danger" hidden>無効にする</button>
+        <span class="spacer"></span>
+        <button type="button" class="btn" data-close>閉じる</button>
+        <button type="submit" id="tokenSubmit" class="btn primary">発行する</button>
       </div>
     </form>
   </dialog>

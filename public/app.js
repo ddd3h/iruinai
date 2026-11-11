@@ -1409,6 +1409,73 @@ $('#withdrawForm').addEventListener('submit', async (e) => {
   }
 });
 
+// APIトークン：発行（パスワードが要る）・作り直し・無効にする。本体は、発行した直後の応答にしか入っていない
+const tokenDays = (ms) => Math.max(1, Math.ceil((ms - Date.now()) / 86400000));
+async function loadToken() {
+  const { token } = await api('GET', '/api/me/token');
+  const used = token && (token.last_used_at ? `最後に使った時刻: ${new Date(token.last_used_at).toLocaleString('ja-JP')}` : 'まだ使われていません');
+  $('#tokenStatus').textContent = token ? `有効です（あと${tokenDays(token.expires_at)}日。${used}）` : 'トークンは発行されていません';
+  $('#tokenSubmit').textContent = token ? '作り直す（今のトークンは使えなくなります）' : '発行する';
+  $('#tokenRevoke').hidden = !token;
+}
+function hideTokenValue() {
+  $('#tokenValue').value = '';
+  $('#tokenShown').hidden = true;
+}
+$('#tokenBtn').addEventListener('click', async () => {
+  if (!editingPerson || !isMe(editingPerson.id)) return;
+  $('#tokenForm').reset();
+  $('#tokenError').textContent = '';
+  $('#tokenStatus').textContent = '確認しています…'; // 前に開いたときの状態を、読み込み直すまで見せない
+  hideTokenValue();
+  $('#personDialog').close();
+  $('#tokenDialog').showModal();
+  try {
+    await loadToken();
+  } catch (err) {
+    $('#tokenError').textContent = err.message;
+  }
+});
+$('#tokenDialog').addEventListener('close', hideTokenValue); // 閉じたら、画面からトークンを消す
+$('#tokenForm').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const submit = $('#tokenSubmit');
+  submit.disabled = true;
+  $('#tokenError').textContent = '';
+  try {
+    const r = await api('POST', '/api/me/token', { password: e.target.password.value });
+    e.target.password.value = '';
+    $('#tokenValue').value = r.token;
+    $('#tokenUsage').textContent = `使い方: curl -H "Authorization: Bearer ${r.token}" "${location.origin}/api/stays?start=2030-01-01&end=2030-02-01"`;
+    $('#tokenShown').hidden = false;
+    await loadToken();
+  } catch (err) {
+    $('#tokenError').textContent = err.message;
+  } finally {
+    submit.disabled = false;
+  }
+});
+$('#tokenCopy').addEventListener('click', async () => {
+  const input = $('#tokenValue');
+  try {
+    await navigator.clipboard.writeText(input.value);
+    $('#tokenCopy').textContent = 'コピーしました';
+  } catch {
+    input.select(); // クリップボードを使えないときは、選択だけして手でコピーしてもらう
+  }
+  setTimeout(() => { $('#tokenCopy').textContent = 'コピー'; }, 1500);
+});
+$('#tokenRevoke').addEventListener('click', async () => {
+  $('#tokenError').textContent = '';
+  try {
+    await api('DELETE', '/api/me/token');
+    hideTokenValue();
+    await loadToken();
+  } catch (err) {
+    $('#tokenError').textContent = err.message;
+  }
+});
+
 // 表示中の日（今日が範囲内なら今日）
 function defaultDay() {
   const view = calendar.view;
