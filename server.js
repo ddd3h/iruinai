@@ -48,6 +48,7 @@ const COLOR_RE = /^#[0-9a-fA-F]{6}$/;
 class InputError extends Error {}
 const { createGuard } = require('./lib/guard');
 const { reactionsRouter } = require('./lib/reactions');
+const { apiDoc } = require('./lib/api-doc');
 const guard = createGuard(db);
 const app = express();
 app.use(compression());
@@ -186,6 +187,7 @@ app.get(['/account', '/account.html', '/reset'], pageAccount);
 // プレースホルダー（__TITLE__ など）を持つ HTML は、.html のアドレスで開かれても置き換えて返す（下の express.static が生のまま配らないように）
 app.get('/login.html', pageLogin);
 app.get('/logout.html', pageLogout);
+app.get('/api/docs', apiDoc(PUBLIC_URL)); // AI に渡す API の仕様書。合言葉の内側（トークンなら通る）
 app.use('/api', guard.writeGuard); // /api/auth と /api/me はこの前で処理済み
 app.use('/api', reactionsRouter(db)); // /api/reactions/* と /api/notifications/*
 

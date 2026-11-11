@@ -161,6 +161,7 @@ AI やスクリプトなどの機械が、あなたの代わりに API を使う
   ```
   curl -H "Authorization: Bearer iruinai_..." "https://room.example.com/api/stays?start=2030-01-01&end=2030-02-01"
   ```
+- AI に渡すとき: 仕様書の URL（`https://room.example.com/api/docs`）とトークンを渡します。この URL もトークンで読めます。API を足したときは、`lib/api-doc.md` にも書いてください（書き忘れるとテストが落ちます）。
 - できること: 本人と同じ操作（自分の人・在室・メモ・反応の閲覧、追加、変更、削除）。他の人のものは `403` です。
 - できないこと: 退会、ログイン・パスワードの操作、トークン自身の発行・無効化（`403`）。画面（`/` など）も開けません。
 - DB にはトークンの SHA-256 だけを置きます。パスワードの再設定と退会でも、トークンは無効になります。ログアウトでは無効になりません。
@@ -177,6 +178,7 @@ AI やスクリプトなどの機械が、あなたの代わりに API を使う
 | POST | `/logout` | ログアウトを実行して `/login` へ（確認画面のボタンの送り先。`ROOM_PASSWORD` 設定時のみ。`Sec-Fetch-Site` が `same-origin` 以外のブラウザからの送信は実行せず、確認画面を返す） |
 | GET | `/account`, `/reset` | ログイン・登録・パスワード再設定の画面（パスワード再設定のリンクは `/reset?token=…`） |
 | GET | `/api/me` | ログイン中のユーザー（未ログインは `{ "user": null }`） |
+| GET | `/api/docs` | AI やスクリプトに渡す API の仕様書（Markdown。`lib/api-doc.md`。`{BASE}` は `PUBLIC_URL` かアクセス先の URL になる）。API トークンだけで読める |
 | POST | `/api/auth/signup` | 登録の申し込み（`email`, `password` だけ。人は、コードの確認のあとで選ぶ）。確認コードをメールで送り、申し込んだブラウザに Cookie `iruinai_signup`（`HttpOnly`・`SameSite=Lax`・`Path=/api/auth`・1時間）を渡す（メールの送信上限あり）。同じブラウザが同じメールをもう一度申し込んだときは、メールを送らず `{ "ok": true, "resumed": true }` を返す |
 | POST | `/api/auth/verify` | 6桁コードの確認（`{ "code" }` だけ。確認待ちは Cookie `iruinai_signup` で決まり、メールやパスワードは送らない）。コードの間違いは5回までで、合っても登録は済まず（ユーザーも人も作られず、ログインもしない）、`{ "ok": true, "verified": true }` を返して、人の選択へ進ませる。Cookie がない・合う確認待ちがないときは `400`（「確認の手続きが見つかりません」） |
 | POST | `/api/auth/complete` | 人を選んで登録を完了する（`{ "person_id" }` か `{ "new_name", "new_color" }`）。コードの確認が済んだブラウザだけが使える。成功するとユーザーと人を作ってログインし、Cookie は消える。人を選ばないまま30分たつと、手続きは消え、何も作られない |
